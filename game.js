@@ -139,6 +139,8 @@
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
     raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
+    milestones:{done:[],idx:0,unlocked:[]},   // 마일스톤 진행(A2)
+    conquests:0, defeats:0, raidWins:0, raidLosses:0,   // 지속형 왕국 지표(A3) — 게임오버 대신 누적 기록
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -157,8 +159,12 @@
   const armiesAt=(g,n)=>g.armies.filter(a=>a.node===n);
   const pArmyCount=g=>g.armies.filter(a=>a.side==="P").length;
   // 운용 부대 수: 기본 3, 성 Lv3→4·Lv5→5 (연구 '군제 개편' +1), 최대 5
-  const ARMY_SLOTS_MAX=5;
-  const armySlots=g=>Math.min(ARMY_SLOTS_MAX, ARMY_SLOTS_BASE+(g.castle.level>=3?1:0)+(g.castle.level>=5?1:0)+(g.research.done["군제 개편"]?1:0));
+  const ARMY_SLOTS_MAX_BASE=5, WALL_MAX_BASE=6;   // 마일스톤(A2) 해금으로 각각 +1씩, 최대 +2까지 확장
+  const milestoneUnlocks=g=>(g.milestones&&g.milestones.unlocked)||[];
+  const unlockCount=(g,key,cap)=>Math.min(cap,milestoneUnlocks(g).filter(x=>x===key).length);
+  const armySlotsMax=g=>ARMY_SLOTS_MAX_BASE+unlockCount(g,"slot",2);
+  const wallMaxLv=g=>WALL_MAX_BASE+unlockCount(g,"wall",2);
+  const armySlots=g=>Math.min(armySlotsMax(g), ARMY_SLOTS_BASE+(g.castle.level>=3?1:0)+(g.castle.level>=5?1:0)+(g.research.done["군제 개편"]?1:0));
   const canAddArmy=g=>pArmyCount(g)<armySlots(g);
   const heroById=(g,id)=>g.heroes.find(h=>h.id===id);
   const troops=a=>Object.values(a.comp).reduce((x,y)=>x+y,0);
@@ -186,6 +192,22 @@
     inc.식량-=foodUpkeep(g);   // 유지비 차감(순수입, 음수 가능)
     return inc;}
 
+  // ---- 국력(Might) 점수(A1): 왕국의 성장을 단일 수치로 요약 → 상단 상시 표시. 성장 요소 증가 시에만 단조 증가. ----
+  const MIGHT_TIER_W={1:1,2:1.6,3:2.4};   // costOf 티어 배율과 동일선상 가중
+  const compMight=comp=>Object.entries(comp||{}).reduce((s,[k,v])=>s+v*(MIGHT_TIER_W[tierOf(k)]||1),0);
+  function computeMight(g){
+    let m=g.castle.level*20 + (g.castle.wall||0)*10;
+    for(const k in g.castle.blevel) m+=(g.castle.blevel[k]||0)*8;
+    for(const k in g.castle.econ) m+=(g.castle.econ[k]||0)*4;
+    m+=Object.keys(g.research.done||{}).length*10;
+    m+=compMight(g.castle.garrison)*0.6;
+    for(const a of g.armies) if(a.side==="P") m+=compMight(a.comp)*0.6;
+    m+=g.heroes.reduce((s,h)=>s+h.grade*15,0);
+    return Math.round(m);
+  }
+  // 적 위협 대략치(비교용 표시): P와 동일 스케일은 아님, 병력 규모 기준 단순 지표
+  const enemyMight=g=>{let t=0;for(const a of g.armies)if(a.side==="E")t+=troops(a);return Math.round(t*1.2);};
+
   // ---- 연구 버프 → 전투 mods ----
   function researchMods(g){const m={};
     for(const k in RESEARCH){const r=RESEARCH[k];if(r.mod&&g.research.done[k]){for(const n of GROUPS[r.mod.group]){m[n]=m[n]||{};m[n][r.mod.stat]=(m[n][r.mod.stat]||1)*r.mod.mul;}}}return m;}
@@ -204,7 +226,7 @@
     const dHero=hasCombatHero(g,defender)?heroById(g,defender.hero):null;
     let aB=aHero?GRADE_BUFF[aHero.grade]:0, dB=dHero?GRADE_BUFF[dHero.grade]:0;
     if(fort){ dB+=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22; if(defender.side==="P"&&hasR(g,"축성술"))dB+=0.15; }
-    if(node==="P"&&defender.side==="P") dB+=Math.min(0.30,(g.castle.wall||0)*0.05);  // 성벽 보강
+    if(node==="P"&&defender.side==="P") dB+=Math.min(wallMaxLv(g)*0.05,(g.castle.wall||0)*0.05);  // 성벽 보강
     if(ancientHold) dB+=0.20;
     if(attacker.side==="E") aB+=aiCombatBuff(g);   // AI 지휘관 정예화
     if(defender.side==="E") dB+=aiCombatBuff(g);
@@ -240,12 +262,39 @@
     else { g.castle.garrison={}; for(const a of pArmies){if(a.hero)heroById(g,a.hero).loc="idle";removeArmy(g,a);} }
     return sum;
   }
-  function checkVictory(g){ if(g.over)return null;
-    if(g.raid&&g.raid.holder&&g.raid.holdTurns>=g.raid.need){g.over=true;g.winner=g.raid.holder;g.winBy="raid";return g.winner;}
-    const eDef=armiesAt(g,"E").some(a=>a.side==="E"),pOnE=armiesAt(g,"E").some(a=>a.side==="P");
-    if(pOnE&&!eDef){g.over=true;g.winner="P";g.winBy="conquest";return "P";}
-    const pDef=armiesAt(g,"P").some(a=>a.side==="P")||troops({comp:g.castle.garrison})>0,eOnP=armiesAt(g,"P").some(a=>a.side==="E");
-    if(eOnP&&!pDef){g.over=true;g.winner="E";g.winBy="conquest";return "E";}
+  // ---- 비종결 플레이(A3): 정복·레이드·함락이 "게임오버"가 아니라 진행 이벤트. 왕국은 계속된다. ----
+  // 정복/함락은 상태(적 본대 유무)를 매틱 재확인하므로 edge-trigger(g._eArmed/_pArmed)로 중복 발동을 막고,
+  // 상대가 다시 방비를 갖추면(본대 재건) 재무장해 다음 함락도 이벤트로 잡는다.
+  function checkVictory(g){
+    const R=g.raid;
+    if(R&&R.holder&&R.holdTurns>=R.need){
+      const winnerSide=R.holder; let reward=null;
+      if(winnerSide==="P"){ reward={철:80,석재:60,식량:60}; for(const r in reward) g.res[r]=(g.res[r]||0)+reward[r]; g.raidWins=(g.raidWins||0)+1; }
+      else g.raidLosses=(g.raidLosses||0)+1;
+      R.holdTurns=0; R.holder=null; R.cleared=false; if(NODES.ANCIENT) NODES.ANCIENT.owner=null;   // 리셋 → 다시 도전 가능
+      return {type:"raid",winner:winnerSide,reward};
+    }
+    const eDef=armiesAt(g,"E").some(a=>a.side==="E"), pOnE=armiesAt(g,"E").some(a=>a.side==="P");
+    if(pOnE&&!eDef){
+      if(g._eArmed!==false){
+        g._eArmed=false;
+        const reward={식량:80,목재:60,철:50,석재:50}; for(const r in reward) g.res[r]=(g.res[r]||0)+reward[r];
+        g.conquests=(g.conquests||0)+1;
+        g.armies=g.armies.filter(a=>a.side!=="E");   // 적 잔여 세력 정리 — 다음 턴부터 본대 재건
+        return {type:"conquest",winner:"P",reward};
+      }
+    } else if(eDef) g._eArmed=true;
+    const pDef=armiesAt(g,"P").some(a=>a.side==="P")||troops({comp:g.castle.garrison})>0, eOnP=armiesAt(g,"P").some(a=>a.side==="E");
+    if(eOnP&&!pDef){
+      if(g._pArmed!==false){
+        g._pArmed=false;
+        for(const r of RES) g.res[r]=Math.floor(g.res[r]*0.5);
+        g.castle.wall=Math.max(0,(g.castle.wall||0)-2);
+        g.defeats=(g.defeats||0)+1;
+        g.armies=g.armies.filter(a=>a.side!=="E");   // 침공군 물러남 — 왕국은 재건해 계속
+        return {type:"defeat",winner:"E"};
+      }
+    } else if(pDef) g._pArmed=true;
     return null;
   }
   // 둥지 리스폰: 예약된 재생성이 도래하면 몬스터 재배치(점거 중이면 지연)
@@ -284,9 +333,9 @@
   function enterTile(g,a,next){ a.node=next; let battle=null;
     if(next==="P"&&a.side==="E") battle=defendCastle(g,a);          // 성 수비: 주둔군 자동 방어
     else { const enemy=armiesAt(g,next).find(x=>x.side!==a.side); if(enemy) battle=resolveBattle(g,a,enemy,next); }
-    checkVictory(g); return {battle}; }
-  // 매 틱: 이동 중인 모든 부대를 speed 만큼 전진(엣지 비용만큼 차면 한 칸). 접촉 시 교전(정지). 마지막 전투 반환.
-  function moveTick(g){ let battle=null;
+    const event=checkVictory(g); return {battle,event}; }
+  // 매 틱: 이동 중인 모든 부대를 speed 만큼 전진(엣지 비용만큼 차면 한 칸). 접촉 시 교전(정지). 마지막 전투/세계이벤트 반환.
+  function moveTick(g){ let battle=null, event=null;
     for(const a of [...g.armies]){ if(g.over) break;
       if(!g.armies.includes(a)) continue;                          // 이미 제거됨
       if(!a.dest || a.node===a.dest){ if(a.dest){a.dest=null;a.path=null;} continue; }
@@ -300,12 +349,13 @@
         if(a.moveProg<cost) break;                                 // 다음 타일 아직 못 감
         a.moveProg-=cost;
         const r=enterTile(g,a,next);
+        if(r.event) event=r.event;
         if(r.battle){ battle=r.battle; stopMove(g,a.id); break; }  // 접촉 전투 → 이동 정지
         if(!g.armies.includes(a)) break;                           // 전투로 제거됨
         if(a.node===a.dest){ stopMove(g,a.id); break; }
       }
     }
-    return battle; }
+    return {battle,event}; }
 
   // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
   const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
@@ -430,6 +480,29 @@
     return completed;
   }
 
+  // ---- 마일스톤 사다리(A2): 국력 문턱마다 보상·해금 → "다음 목표"가 항상 존재. 순차 달성(퀘스트와 같은 패턴). ----
+  // need 값은 newGame() 시작 국력(~98, 영웅 2명·성Lv1 기준)보다 충분히 위에서 시작하도록 봇 플레이테스트(하한선)로 보정:
+  // 하한선 봇 기준 T20≈150 · T60≈280 · T150+≈450 대까지 성장(§ sim.js). 실제 플레이는 더 빠름.
+  const MILESTONES=[
+    {id:"m1",name:"개척지",       need:150, reward:{목재:40,석재:20},                              desc:"국력 150 — 왕국의 기틀을 다졌다."},
+    {id:"m2",name:"번영하는 영지", need:280, reward:{식량:60,철:30},               unlock:"slot",  desc:"국력 280 — 운용 부대 수 상한 +1."},
+    {id:"m3",name:"무장한 왕국",   need:450, reward:{철:50,석재:40},               unlock:"wall",  desc:"국력 450 — 성벽 보강 상한 +1."},
+    {id:"m4",name:"지역의 패자",   need:650, reward:{식량:100,목재:80,철:60},                       desc:"국력 650 — 주변에 이름이 알려지다."},
+    {id:"m5",name:"왕국의 전설",   need:900, reward:{식량:150,목재:120,석재:100,철:100}, unlock:"slot", desc:"국력 900 — 운용 부대 수 상한 +1 (추가)."},
+  ];
+  function milestoneTick(g){
+    if(!g.milestones) g.milestones={done:[],idx:0,unlocked:[]};
+    const completed=[], might=computeMight(g);
+    while(g.milestones.idx<MILESTONES.length){
+      const m=MILESTONES[g.milestones.idx]; if(might<m.need) break;
+      g.milestones.done.push(m.id);
+      if(m.reward) for(const r in m.reward) g.res[r]=(g.res[r]||0)+m.reward[r];
+      if(m.unlock) g.milestones.unlocked.push(m.unlock);
+      g.milestones.idx++; completed.push(m);
+    }
+    return completed;
+  }
+
   // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
   function endTurn(g){
     if(g.over)return{enemyBattle:null};
@@ -442,17 +515,37 @@
     let heal=(g.castle.econ["병원"]||0)*3;
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
     aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
-    const enemyBattle=moveTick(g);   // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투
+    const mt=moveTick(g);            // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투(+세계이벤트)
     raidTick(g);
-    g.turn++; tavernTick(g); processRespawns(g); checkVictory(g);
+    g.turn++; tavernTick(g); processRespawns(g);
+    const raidEvent=checkVictory(g);          // 턴 경계 이벤트(레이드 수성 완료 등)
+    const worldEvent=mt.event||raidEvent;
     const questsCompleted=questTick(g);
-    return {enemyBattle, built, questsCompleted};
+    const msCompleted=milestoneTick(g);
+    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, worldEvent};
   }
+
+  // ---- 오프라인 누적(A4): 실시각 계산은 ui.js 몫(Date.now()) — 여긴 순수하게 "틱 수"만 받아 진행.
+  // 전투·AI 원정은 스킵(자리 비운 사이 불공정한 기습 패배 방지), 경제·생산·연구·건설·퀘스트/마일스톤만 진행.
+  const OFFLINE_MAX_TICKS=20000;   // 안전 상한(ui의 시간 상한과 별개인 하드 백스톱)
+  function offlineStep(g){
+    const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
+    g.starving=g.res.식량<0; if(g.starving)g.res.식량=0;
+    let made=g.starving?0:buildRate(g); while(made>0&&g.castle.queue.length){const u=g.castle.queue.shift();g.castle.garrison[u]=(g.castle.garrison[u]||0)+1;made--;}
+    if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
+    if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){completeBuild(g,g.castle.build);g.castle.build=null;}}
+    let heal=(g.castle.econ["병원"]||0)*3;
+    for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
+    g.turn++; tavernTick(g); processRespawns(g); questTick(g); milestoneTick(g);
+  }
+  function offlineTick(g,ticks){ ticks=Math.max(0,Math.min(ticks|0,OFFLINE_MAX_TICKS));
+    const t0=g.turn; for(let i=0;i<ticks;i++) offlineStep(g); return {ticks,turns:g.turn-t0}; }
 
   API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
     TIER_MAX,TIER_NAME,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
-    ARMY_SLOTS_BASE,ARMY_SLOTS_MAX,pArmyCount,armySlots,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
+    ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
+    computeMight,enemyMight,MILESTONES,milestoneTick,offlineTick,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,

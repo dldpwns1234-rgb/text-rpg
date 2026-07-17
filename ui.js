@@ -11,8 +11,22 @@ function renderResBar(){
     return `<span class="res">${r} <b>${state.res[r]}</b> <span class="inc" style="${v<0?'color:#fca5a5':''}">${v>=0?'+':''}${v}</span></span>`;
   }).join("")
     +`<span class="res" style="border-color:#c4b5fd;color:#c4b5fd">🏵 토벌 <b>${state.subdue||0}</b></span>`
-    +`<span class="res" style="border-color:#fbbf24;color:#fbbf24">📜 경험치 <b>${state.xpItems||0}</b></span>`;
+    +`<span class="res" style="border-color:#fbbf24;color:#fbbf24">📜 경험치 <b>${state.xpItems||0}</b></span>`
+    +`<span class="res" style="border-color:var(--blue);color:var(--blue)">⚔ 국력 <b>${Game.computeMight(state)}</b> <span class="k">(적 ${Game.enemyMight(state)})</span></span>`;
   document.getElementById('turn').textContent=state.turn;
+}
+// 🏅 다음 마일스톤(A2) — 국력 진행바. 전부 달성하면 숨김.
+function renderMilestone(){
+  const MS=Game.MILESTONES, ms=state.milestones||{idx:0};
+  if(!MS||ms.idx>=MS.length) return "";
+  const cur=MS[ms.idx], might=Game.computeMight(state), pct=Math.min(100,Math.round(100*might/cur.need));
+  const rw=cur.reward&&Object.keys(cur.reward).length?Object.entries(cur.reward).map(([r,v])=>`${r[0]}+${v}`).join(" "):"";
+  return `<div style="background:var(--bg);border:1px solid var(--blue);border-radius:10px;padding:8px 10px;margin-bottom:10px">
+    <div style="font-size:11px;color:var(--blue)">🏅 다음 마일스톤 <b>${cur.name}</b> <span class="k">(국력 ${might}/${cur.need})</span></div>
+    <div class="k" style="font-size:12px;margin-top:2px">${cur.desc}</div>
+    <div style="height:5px;background:var(--line);border-radius:3px;margin-top:5px"><div style="height:100%;width:${pct}%;background:var(--blue);border-radius:3px"></div></div>
+    ${rw?`<div style="font-size:11px;color:var(--green);margin-top:3px">✦ 보상 ${rw}</div>`:""}
+  </div>`;
 }
 // 🎯 온보딩 퀘스트 — 현재 목표를 패널 최상단에 상시 표시(선택 상태 무관). 데이터는 Game.QUESTS.
 function renderQuests(){
@@ -29,7 +43,7 @@ function renderQuests(){
 }
 function renderPanel(){
   const p=document.getElementById('panel'); const s=state.selected;
-  let h=renderQuests();
+  let h=renderQuests()+renderMilestone();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
     const tab=state.castleTab||"건물"; const busy=!!c.build;
@@ -53,10 +67,10 @@ function renderPanel(){
       <span class="cost">목${CASTLE_UP_COST.목재} 석${CASTLE_UP_COST.석재} 철${CASTLE_UP_COST.철}</span>
       <button class="minibtn" id="levelup" ${canAfford(CASTLE_UP_COST)&&!busy?"":"disabled"}>▲</button></div>
       <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`;
-    { const wl=c.wall||0, wc=Game.wallCost(wl);
-      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl} · 수성 +${Math.min(30,wl*5)}% · ${Game.buildDur("wall")}턴</span></span>
+    { const wl=c.wall||0, wc=Game.wallCost(wl), wMax=Game.wallMaxLv(state);
+      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall")}턴</span></span>
         <span class="cost">${Object.entries(wc).map(([r,v])=>r[0]+v).join(" ")}</span>
-        <button class="minibtn" data-wall="1" ${wl<6&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
+        <button class="minibtn" data-wall="1" ${wl<wMax&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
     h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(클릭해 열기 · 레벨 = 최대 티어)</span></div>`;
     for(const key in BUILDINGS){const b=BUILDINGS[key];
       if(c.buildings.includes(key)){
@@ -341,20 +355,31 @@ function showBattleModal(sum){
     <div class="res-line k">생존 — 공격 ${sum.survA} · 수비 ${sum.survB}</div>
     <button class="minibtn" id="modalClose">확인</button>`);
 }
-function endGame(){
-  state.over=true; if(typeof rtStop==="function")rtStop(); document.getElementById('endturn').disabled=true;
-  const win=state.winner==="P", raid=state.winBy==="raid";
-  const msg = win ? (raid?"고대성을 수성해 레이드 승리!":"적 수도를 함락했습니다.")
-                  : (raid?"적이 고대성 레이드를 완성했습니다.":"수도를 빼앗겼습니다.");
-  showModal(`<h2>${win?"🏆 승리!":"💀 패배"} <span class="k" style="font-size:14px">${raid?"[레이드]":"[정복]"}</span></h2>
-    <div class="res-line">${msg}</div>
-    <div class="res-line k">${state.turn}턴 소요</div>
-    <button class="minibtn" id="modalClose">닫기</button>`);
+// 🌍 세계 이벤트(A3) — 정복·함락·레이드는 게임오버가 아니라 진행 이벤트. 왕국은 계속된다.
+function showWorldEventModal(ev){
+  const rw=ev.reward?Object.entries(ev.reward).map(([r,v])=>`${r} +${v}`).join(", "):"";
+  if(ev.type==="conquest"){
+    showModal(`<h2>🏰 정복!</h2>
+      <div class="res-line">적 수도를 함락했습니다 — 영토와 보상을 획득!${rw?`<br><span class="k">${rw}</span>`:""}</div>
+      <div class="res-line k">적은 곧 세력을 재건합니다 — 왕국은 계속됩니다.</div>
+      <button class="minibtn" id="modalClose">확인</button>`);
+  } else if(ev.type==="defeat"){
+    showModal(`<h2>💥 수도 함락</h2>
+      <div class="res-line">적이 수도를 함락했습니다 — 자원 절반 손실, 성벽 손상.</div>
+      <div class="res-line k">주둔군을 재건하고 왕국을 다시 일으키세요.</div>
+      <button class="minibtn" id="modalClose">확인</button>`);
+  } else if(ev.type==="raid"){
+    const won=ev.winner==="P";
+    showModal(`<h2>${won?"🏛 레이드 성공!":"🏛 레이드 실패"}</h2>
+      <div class="res-line">${won?`고대성 수성을 완수해 보상을 획득!${rw?`<br><span class="k">${rw}</span>`:""}`:"적이 고대성 레이드를 완수했습니다."}</div>
+      <div class="res-line k">고대 생물이 다시 나타나 재도전할 수 있습니다.</div>
+      <button class="minibtn" id="modalClose">확인</button>`);
+  }
 }
 
 /* ===== 저장/불러오기 ===== */
 const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier"];
-function saveSnapshot(){const o={...state,ancientOwner:NODES.ANCIENT.owner};for(const f of UI_FIELDS)delete o[f];return JSON.parse(JSON.stringify(o));}
+function saveSnapshot(){const o={...state,ancientOwner:NODES.ANCIENT.owner,savedAt:Date.now()};for(const f of UI_FIELDS)delete o[f];return JSON.parse(JSON.stringify(o));}
 function applySave(data){
   if(typeof rtStop==="function")rtStop();   // 로드/새게임 시 실시간 루프 정지
   hideModal();                              // 열려있던 전투/종료 모달 닫기
@@ -362,13 +387,35 @@ function applySave(data){
   Object.assign(state,data); NODES.ANCIENT.owner=data.ancientOwner!==undefined?data.ancientOwner:null; delete state.ancientOwner;
   state.selected=null;state.pendingMove=null;state.mode="normal"; state.castleTab=state.castleTab||"건물"; state.prodTier=state.prodTier||{};
   state.quests=state.quests||{done:[],idx:0};   // 구버전 세이브 호환
+  state.milestones=state.milestones||{done:[],idx:0,unlocked:[]};   // 구버전 세이브 호환(A2)
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}
-function loadLocal(){try{const s=localStorage.getItem(SAVE_KEY);if(!s){toast("저장된 판이 없습니다");return;}applySave(JSON.parse(s));toast("📂 불러왔습니다 — 턴 "+state.turn);}catch(e){toast("⚠ 불러오기 실패");}}
+function loadLocal(){try{const s=localStorage.getItem(SAVE_KEY);if(!s){toast("저장된 판이 없습니다");return;}
+  const data=JSON.parse(s); applySave(data); toast("📂 불러왔습니다 — 턴 "+state.turn); offlineCatchup(data);
+}catch(e){toast("⚠ 불러오기 실패");}}
 function exportFile(){const blob=new Blob([JSON.stringify(saveSnapshot())],{type:"application/json"});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download="mini4x_턴"+state.turn+".json";a.click();URL.revokeObjectURL(a.href);toast("⬇ 세이브 파일 내보냄");}
-function importFile(file){const r=new FileReader();r.onload=()=>{try{applySave(JSON.parse(r.result));toast("⬆ 가져왔습니다 — 턴 "+state.turn);}catch(e){toast("⚠ 파일 형식 오류");}};r.readAsText(file);}
+function importFile(file){const r=new FileReader();r.onload=()=>{try{const data=JSON.parse(r.result);
+  applySave(data); toast("⬆ 가져왔습니다 — 턴 "+state.turn); offlineCatchup(data);
+}catch(e){toast("⚠ 파일 형식 오류");}};r.readAsText(file);}
+// ---- 오프라인 누적(A4) — 실시각(Date.now())은 여기(ui.js)에서만 다룸. 계산 자체는 game.js의 순수 offlineTick.
+const OFFLINE_MAX_HOURS=12;   // 한 번에 인정하는 오프라인 시간 상한
+function offlineCatchup(data){
+  if(!data.savedAt||state.over) return;
+  const elapsedMs=Date.now()-data.savedAt;
+  const ticks=Math.floor(Math.min(elapsedMs,OFFLINE_MAX_HOURS*3600*1000)/RT_BASE);
+  if(ticks<1) return;
+  const before={...state.res};
+  const r=Game.offlineTick(state,ticks);
+  render(); saveLocal(true);
+  const gain=Game.RES.map(k=>`${k} +${Math.max(0,state.res[k]-before[k])}`).join(" · ");
+  const hrs=elapsedMs/3600000;
+  showModal(`<h2>🌙 자리를 비운 사이…</h2>
+    <div class="res-line">약 ${hrs<1?Math.round(hrs*60)+"분":hrs.toFixed(1)+"시간"} 동안 <b>${r.turns}틱</b> 자동 진행됨.</div>
+    <div class="res-line k">${gain}</div>
+    <button class="minibtn" id="modalClose">확인</button>`);
+}
 function newGameReset(){if(!confirm("새 게임을 시작할까요? 저장 안 한 진행은 사라집니다."))return;applySave({...Game.newGame(),ancientOwner:null});toast("🆕 새 게임");}
 document.getElementById('saveBtn').onclick=()=>saveLocal(false);
 document.getElementById('loadBtn').onclick=loadLocal;
@@ -384,7 +431,8 @@ function stepTurn(){
   const r=Game.endTurn(state);
   render(); saveLocal(true);   // 매 틱 자동 저장
   if(r.enemyBattle){ rtPause(); showBattleModal(r.enemyBattle); }   // 전투 → 자동 일시정지 + 관전
-  if(state.over){ endGame(); return; }
+  if(r.worldEvent){ rtPause(); showWorldEventModal(r.worldEvent); }   // 정복/함락/레이드(A3) — 진행 이벤트로 안내, 게임은 계속
+  else if(r.msCompleted&&r.msCompleted.length) toast(`🏅 마일스톤 달성: ${r.msCompleted[r.msCompleted.length-1].name}!`);
   else if(r.questsCompleted&&r.questsCompleted.length) toast(`🎯 목표 달성: ${r.questsCompleted[r.questsCompleted.length-1].name}!`);
   else if(r.built) toast(`🏗 ${r.built} 완성!`);
   else if(!r.enemyBattle) toast("⏱ 시간 경과 — 수입·생산 정산");

@@ -54,23 +54,25 @@ function botTurn(g){
   for(const a of g.armies.filter(a=>a.side==="P"&&a.goal==="attack")){if(g.over)break;Game.orderMove(g,a.id,"E");}
 }
 
+// 비종결 플레이(A3) — 게임이 끝나지 않으므로 승/패/시간초과 대신 국력·정복/함락·레이드 누적치로 측정.
 function runGame(maxTurns=400){   // 시간 기반 이동으로 게임이 길어짐(틱=초). 컷오프 상향.
   const g=Game.newGame(); const trace=[];
-  while(!g.over && g.turn<=maxTurns){
-    botTurn(g); if(g.over)break;
+  while(g.turn<=maxTurns){
+    botTurn(g);
     Game.endTurn(g);
     if(g.turn%6===0)trace.push({t:g.turn,res:{...g.res},aiHome:troops(g.armies.find(a=>a.role==="home")||{comp:{}}),pArmies:g.armies.filter(a=>a.side==="P").length});
   }
-  if(!g.over)g.winner="timeout";
-  return {winner:g.winner,turns:g.turn,resEnd:g.res,monLeft:g.armies.filter(a=>a.side==="M").length,trace};
+  return {turns:g.turn,resEnd:g.res,might:Game.computeMight(g),conquests:g.conquests||0,defeats:g.defeats||0,
+    raidWins:g.raidWins||0,raidLosses:g.raidLosses||0,monLeft:g.armies.filter(a=>a.side==="M").length,trace};
 }
 
-const N=400; const stat={P:0,E:0,timeout:0}; let sumWin=0,winCount=0,resAcc={식량:0,목재:0,석재:0,철:0},monClear=0;
-for(let i=0;i<N;i++){const r=runGame();stat[r.winner]++;if(r.winner!=="timeout"){sumWin+=r.turns;winCount++;}for(const k of Game.RES)resAcc[k]+=r.resEnd[k];if(r.monLeft<2)monClear++;}
-console.log(`=== ${N}판 플레이테스트 (game.js 공유 규칙) ===`);
-console.log(`승률 — 플레이어 ${(100*stat.P/N).toFixed(0)}% · 적 ${(100*stat.E/N).toFixed(0)}% · 시간초과 ${(100*stat.timeout/N).toFixed(0)}%`);
-console.log(`평균 게임 길이 — 승부난 판 ${(winCount?sumWin/winCount:0).toFixed(1)}턴`);
+const N=400; let sumMight=0,resAcc={식량:0,목재:0,석재:0,철:0},monClear=0,conqAcc=0,defAcc=0,raidWAcc=0,raidLAcc=0;
+for(let i=0;i<N;i++){const r=runGame();sumMight+=r.might;for(const k of Game.RES)resAcc[k]+=r.resEnd[k];if(r.monLeft<2)monClear++;
+  conqAcc+=r.conquests;defAcc+=r.defeats;raidWAcc+=r.raidWins;raidLAcc+=r.raidLosses;}
+console.log(`=== ${N}판 플레이테스트 (game.js 공유 규칙, ${400}턴 지속형 왕국) ===`);
+console.log(`턴${400} 시점 평균 국력(Might) — ${(sumMight/N).toFixed(0)}`);
+console.log(`평균 정복 ${(conqAcc/N).toFixed(2)}회 · 평균 함락 ${(defAcc/N).toFixed(2)}회 · 레이드 승 ${(raidWAcc/N).toFixed(2)} / 패 ${(raidLAcc/N).toFixed(2)}`);
 console.log(`종료 시 평균 잉여 자원 — ${Game.RES.map(k=>k+" "+(resAcc[k]/N).toFixed(0)).join(" / ")}`);
 console.log(`몬스터 소탕(≥1) — ${(100*monClear/N).toFixed(0)}%`);
-const demo=runGame(); console.log(`\n대표 1판: ${demo.winner} 승, ${demo.turns}턴`);
+const demo=runGame(); console.log(`\n대표 1판: ${demo.turns}턴 · 국력 ${demo.might} · 정복 ${demo.conquests} · 함락 ${demo.defeats}`);
 demo.trace.forEach(t=>console.log(`  T${t.t}: 식${t.res.식량} 목${t.res.목재} 석${t.res.석재} 철${t.res.철} · 적본대 ${t.aiHome} · 아군부대 ${t.pArmies}`));
