@@ -9,6 +9,7 @@ const path = require("path");
 
 const engine = fs.readFileSync(path.join(__dirname, "engine.js"), "utf8");
 const game   = fs.readFileSync(path.join(__dirname, "game.js"),   "utf8");
+const ui     = fs.readFileSync(path.join(__dirname, "ui.js"),     "utf8");   // 공유 UI(노드·타일 공용)
 
 const targets = [
   { tpl: "app_combat.html",  out: "../phaseA_prototype.html" },
@@ -35,6 +36,10 @@ for (const { tpl, out } of targets) {
   if (html.includes("//__GAME__")) {
     html = html.replace("//__GAME__", "/* ==== game.js 인라인 (build.js 생성, 직접 수정 금지) ==== */\n" + gameForBrowser);
     parts += ` + game.js ${game.length}자`;
+  }
+  if (html.includes("//__UI__")) {
+    html = html.replace("//__UI__", "/* ==== ui.js 인라인 (build.js 생성, 직접 수정 금지) ==== */\n" + ui);
+    parts += ` + ui.js ${ui.length}자`;
   }
   fs.writeFileSync(path.join(__dirname, out), html);
   console.log(`✓ ${out} 생성 (${parts} 인라인)`);
