@@ -65,6 +65,12 @@
   const AI={budgetPerTurn:5,waveSize:38,homeCap:70,tierEvery:16,waveCap:2,waveFrac:0.85}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
   // 시즌형 침공(B2): N턴마다 예고→도래하는 대규모 원정대. 도래마다 간격이 줄고(escalating) 규모가 커짐(횟수·국력 둘 다 반영).
   const SEASON_INTERVAL=60, SEASON_MIN_INTERVAL=30, SEASON_WARN_LEAD=12, SEASON_BASE=30, SEASON_GROWTH=0.35;
+  // 다수 세력(B1, 성 없는 방식): 자기 성·영토 없이 야생 타일에서 등장해 독자적 주기로 습격하는 독립 세력들.
+  // side는 여전히 "E"(정복/함락 판정을 그대로 재사용) — 이름·병종 편향·주기로만 서로 다른 위협처럼 느껴지게 함.
+  const FACTIONS=[
+    {id:"raider",name:"도적단",   units:["경기병","중기병"],interval:45,base:12,growth:0.22},
+    {id:"horde", name:"오크 군세",units:["중갑보병","창병"],interval:65,base:15,growth:0.25},
+  ];
 
   const RESEARCH={
     "축성술":{cat:"전투",sub:"공성·수성",req:[],cost:{목재:15,철:15},turns:2,desc:"내 성 수비 +15%"},
@@ -151,6 +157,7 @@
     conquests:0, defeats:0, raidWins:0, raidLosses:0,   // 지속형 왕국 지표(A3) — 게임오버 대신 누적 기록
     raidBossGen:0,   // 월드 보스(레이드) 재등장 세대(B4) — 재등장할 때마다 +1, 그만큼 강화
     season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
+    factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -492,6 +499,24 @@
     return null;
   }
 
+  // ---- 다수 세력(B1): 성 없이 야생에서 등장하는 독립 습격대. 각자 고유 주기·병종 편향. ----
+  function factionTick(g){
+    if(!g.factions) g.factions=FACTIONS.map(f=>({id:f.id,count:1,next:f.interval}));
+    const events=[];
+    for(const fs of g.factions){
+      const f=FACTIONS.find(x=>x.id===fs.id); if(!f||g.turn<fs.next) continue;
+      const need=Math.round(f.base*(1+f.growth*(fs.count-1)));
+      const t=aiTierOf(g), comp={};
+      for(let i=0;i<need;i++){ const u=f.units[Math.floor(Math.random()*f.units.length)], key=uk(u,t); comp[key]=(comp[key]||0)+1; }
+      const node=randomTile(g)||"E";
+      const e={id:newId(g,"F"),side:"E",node,mp:0,maxMp:0,name:`${f.name} 습격대`,comp,hero:null,role:"attack",target:"P"};
+      g.armies.push(e); orderMove(g,e.id,"P");
+      events.push({type:"faction",faction:f.name,troops:need});
+      fs.count++; fs.next=g.turn+f.interval;
+    }
+    return events;
+  }
+
   // ---- 온보딩 퀘스트 (초반 빌드 가이드 겸 튜토리얼) ----
   // 선형 체인. done(g)=상태를 받는 순수 조건 함수. 달성 시 questTick 이 보상 지급 후 다음 목표로.
   // 데이터는 여기(단일 소스), 표시는 ui.js renderQuests. 시간모델 무관 → 실시간 전환해도 tick 에서 그대로.
@@ -554,6 +579,7 @@
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
     aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
     const seasonEvent=seasonTick(g); // 시즌형 침공(B2) — 예고/도래
+    const factionEvents=factionTick(g);   // 다수 세력(B1) — 야생에서 습격대 등장
     const mt=moveTick(g);            // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투(+세계이벤트)
     raidTick(g);
     g.turn++; tavernTick(g); processRespawns(g);
@@ -561,7 +587,7 @@
     const worldEvent=mt.event||raidEvent;
     const questsCompleted=questTick(g);
     const msCompleted=milestoneTick(g);
-    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, worldEvent, seasonEvent};
+    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, worldEvent, seasonEvent, factionEvents};
   }
 
   // ---- 오프라인 누적(A4): 실시각 계산은 ui.js 몫(Date.now()) — 여긴 순수하게 "틱 수"만 받아 진행.
@@ -584,7 +610,7 @@
     TIER_MAX,TIER_NAME,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
-    computeMight,enemyMight,MILESTONES,milestoneTick,offlineTick,monsterScale,
+    computeMight,enemyMight,MILESTONES,milestoneTick,offlineTick,monsterScale,FACTIONS,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,

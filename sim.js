@@ -64,17 +64,18 @@ function runGame(maxTurns=400){   // 시간 기반 이동으로 게임이 길어
   }
   return {turns:g.turn,resEnd:g.res,might:Game.computeMight(g),conquests:g.conquests||0,defeats:g.defeats||0,
     raidWins:g.raidWins||0,raidLosses:g.raidLosses||0,monLeft:g.armies.filter(a=>a.side==="M").length,trace,
-    seasons:g.season?g.season.count-1:0,raidBossGen:g.raidBossGen||0,monsterScale:Game.monsterScale(g)};
+    seasons:g.season?g.season.count-1:0,raidBossGen:g.raidBossGen||0,monsterScale:Game.monsterScale(g),
+    factionRaids:(g.factions||[]).reduce((s,f)=>s+(f.count-1),0)};
 }
 
-const N=400; let sumMight=0,resAcc={식량:0,목재:0,석재:0,철:0},monClear=0,conqAcc=0,defAcc=0,raidWAcc=0,raidLAcc=0,seasonAcc=0,bossGenAcc=0,scaleAcc=0;
+const N=400; let sumMight=0,resAcc={식량:0,목재:0,석재:0,철:0},monClear=0,conqAcc=0,defAcc=0,raidWAcc=0,raidLAcc=0,seasonAcc=0,bossGenAcc=0,scaleAcc=0,factionAcc=0;
 for(let i=0;i<N;i++){const r=runGame();sumMight+=r.might;for(const k of Game.RES)resAcc[k]+=r.resEnd[k];if(r.monLeft<2)monClear++;
   conqAcc+=r.conquests;defAcc+=r.defeats;raidWAcc+=r.raidWins;raidLAcc+=r.raidLosses;
-  seasonAcc+=r.seasons;bossGenAcc+=r.raidBossGen;scaleAcc+=r.monsterScale;}
+  seasonAcc+=r.seasons;bossGenAcc+=r.raidBossGen;scaleAcc+=r.monsterScale;factionAcc+=r.factionRaids;}
 console.log(`=== ${N}판 플레이테스트 (game.js 공유 규칙, ${400}턴 지속형 왕국) ===`);
 console.log(`턴${400} 시점 평균 국력(Might) — ${(sumMight/N).toFixed(0)} · 평균 몬스터 스케일 ×${(scaleAcc/N).toFixed(2)}`);
 console.log(`평균 정복 ${(conqAcc/N).toFixed(2)}회 · 평균 함락 ${(defAcc/N).toFixed(2)}회 · 레이드 승 ${(raidWAcc/N).toFixed(2)} / 패 ${(raidLAcc/N).toFixed(2)}`);
-console.log(`평균 시즌 대침공 발생 ${(seasonAcc/N).toFixed(2)}회 · 월드보스 재등장(평균 세대) ${(bossGenAcc/N).toFixed(2)}`);
+console.log(`평균 시즌 대침공 발생 ${(seasonAcc/N).toFixed(2)}회 · 월드보스 재등장(평균 세대) ${(bossGenAcc/N).toFixed(2)} · 습격대 발생 ${(factionAcc/N).toFixed(2)}회`);
 console.log(`종료 시 평균 잉여 자원 — ${Game.RES.map(k=>k+" "+(resAcc[k]/N).toFixed(0)).join(" / ")}`);
 console.log(`몬스터 소탕(≥1) — ${(100*monClear/N).toFixed(0)}%`);
 const demo=runGame(); console.log(`\n대표 1판: ${demo.turns}턴 · 국력 ${demo.might} · 정복 ${demo.conquests} · 함락 ${demo.defeats} · 시즌 ${demo.seasons}회`);
