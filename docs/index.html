@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>판타지 미니 4X</title>
+<style>
+  :root{--bg:#0f172a;--card:#1e293b;--line:#334155;--txt:#e2e8f0;--dim:#94a3b8;--gold:#f59e0b;--blue:#3b82f6;--green:#22c55e;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:rgba(245,158,11,.25);}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,"Malgun Gothic",system-ui,sans-serif;
+    min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;line-height:1.5;}
+  h1{font-size:26px;margin:0 0 6px;text-align:center;}
+  .sub{color:var(--dim);font-size:14px;text-align:center;margin-bottom:22px;}
+  .cards{display:flex;flex-direction:column;gap:14px;width:100%;max-width:420px;}
+  a.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;
+    text-decoration:none;color:var(--txt);touch-action:manipulation;transition:border-color .15s,transform .1s;}
+  a.card:active{transform:scale(.98);}
+  a.card.main{border-color:var(--gold);}
+  a.card:hover{border-color:var(--gold);}
+  .t{font-size:18px;font-weight:800;margin-bottom:3px;}
+  .t .badge{font-size:11px;font-weight:700;color:#04240f;background:var(--gold);border-radius:6px;padding:2px 7px;margin-left:6px;vertical-align:middle;}
+  .d{color:var(--dim);font-size:13px;}
+  .foot{color:var(--dim);font-size:12px;margin-top:24px;text-align:center;max-width:420px;}
+  .foot b{color:var(--txt);}
+</style>
+</head>
+<body>
+  <h1>🏰 판타지 미니 4X</h1>
+  <div class="sub">상성 병과 + 영웅으로 정복하는 · 일시정지 가능 실시간 전략</div>
+  <div class="cards">
+    <a class="card main" href="phaseC_tilemap.html">
+      <div class="t">타일맵 전략 <span class="badge">메인</span></div>
+      <div class="d">14×9 타일 · 시간 기반 이동(병종별 속도) · 실시간 + 배속 · 퀘스트 가이드. 폰 권장.</div>
+    </a>
+    <a class="card" href="phaseB_economy.html">
+      <div class="t">노드맵 버전</div>
+      <div class="d">17노드 그래프 맵. 같은 규칙, 다른 지형.</div>
+    </a>
+    <a class="card" href="phaseA_prototype.html">
+      <div class="t">전투 프로토타입</div>
+      <div class="d">6병과 자동 전투만 시험하는 초기 버전.</div>
+    </a>
+  </div>
+  <div class="foot">진행은 <b>이 기기에 자동 저장</b>됩니다(다음에 이어하기). 다른 기기로 옮기려면 게임 안의 <b>⬇ 내보내기 / ⬆ 가져오기</b>를 쓰세요.</div>
+</body>
+</html>

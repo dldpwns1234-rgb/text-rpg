@@ -13,7 +13,7 @@ const TARGETS = [
   { name: "노드판 phaseB", file: "phaseB_economy.html",  minNodes: 17 },
   { name: "타일판 phaseC", file: "phaseC_tilemap.html",  minNodes: 100 },
 ];
-const ROOT = path.join(__dirname, "..");   // 빌드 산출물 위치
+const ROOT = path.join(__dirname, "docs");   // 빌드 산출물 위치(docs/ = GitHub Pages 서빙 폴더)
 
 let pass = 0, fail = 0;
 const ok = (cond, label) => { cond ? pass++ : fail++; console.log(`  ${cond ? "✅" : "❌"} ${label}`); return cond; };

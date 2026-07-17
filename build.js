@@ -11,10 +11,12 @@ const engine = fs.readFileSync(path.join(__dirname, "engine.js"), "utf8");
 const game   = fs.readFileSync(path.join(__dirname, "game.js"),   "utf8");
 const ui     = fs.readFileSync(path.join(__dirname, "ui.js"),     "utf8");   // 공유 UI(노드·타일 공용)
 
+// 빌드 산출물은 docs/ 로 → GitHub Pages(main /docs)로 그대로 호스팅. (구: ../ 저장소 밖)
+fs.mkdirSync(path.join(__dirname, "docs"), { recursive: true });
 const targets = [
-  { tpl: "app_combat.html",  out: "../phaseA_prototype.html" },
-  { tpl: "app_economy.html", out: "../phaseB_economy.html" },
-  { tpl: "app_tilemap.html", out: "../phaseC_tilemap.html" },
+  { tpl: "app_combat.html",  out: "docs/phaseA_prototype.html" },
+  { tpl: "app_economy.html", out: "docs/phaseB_economy.html" },
+  { tpl: "app_tilemap.html", out: "docs/phaseC_tilemap.html" },
 ];
 
 // node 전용 export 줄을 브라우저 전역 노출로 치환.

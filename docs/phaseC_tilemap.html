@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>판타지 미니 4X — Phase B 조각②: 채집 + 성 내정</title>
+<style>
+  :root{--bg:#0f172a;--card:#1e293b;--card2:#273449;--line:#334155;--txt:#e2e8f0;--dim:#94a3b8;
+    --blue:#3b82f6;--red:#ef4444;--gold:#f59e0b;--green:#22c55e;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,"Malgun Gothic",system-ui,sans-serif;padding:12px;line-height:1.4;font-size:14px;}
+  h1{font-size:18px;margin:0 0 8px;}
+  .top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
+    border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px;}
+  .res{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);
+    border-radius:8px;padding:4px 9px;font-variant-numeric:tabular-nums;}
+  .res .inc{color:var(--green);font-size:12px;}
+  button{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
+    padding:6px 12px;font-size:13px;cursor:pointer;font-weight:600;}
+  button:hover:not(:disabled){background:var(--line);}
+  button:disabled{opacity:.4;cursor:default;}
+  #endturn{background:var(--green);color:#04240f;border:none;}
+  .wrap{display:grid;grid-template-columns:1fr 300px;gap:10px;}
+  .mapbox{background:#0b1220;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  svg{display:block;width:100%;height:auto;}
+  button,.minibtn{touch-action:manipulation;-webkit-tap-highlight-color:rgba(245,158,11,.25);}  /* 탭 300ms 지연 제거 */
+  @media(max-width:820px){          /* 모바일: 지도 확대(가로 스크롤) + 버튼/입력 확대 */
+    .wrap{grid-template-columns:1fr;}
+    .mapbox{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;}
+    svg{width:672px;max-width:none;}          /* 타일 ~47px, 가로 스와이프로 스크롤 */
+    .minibtn{font-size:13px;padding:8px 11px;}
+    button{min-height:42px;}
+    .prodrow{padding:7px 0;}
+    select,input[type=number]{min-height:38px;font-size:14px;padding:5px;}
+    .res{padding:6px 10px;}
+  }
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:13px;}
+  .panel h3{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between;}
+  .k{color:var(--dim);}
+  .edge{stroke:#334155;stroke-width:3;}
+  .reach{stroke:var(--green);stroke-width:3;stroke-dasharray:5 4;fill:none;opacity:.9;}
+  .nlabel{fill:var(--dim);font-size:11px;text-anchor:middle;pointer-events:none;}
+  .gath{fill:var(--green);font-size:11px;text-anchor:middle;font-weight:700;pointer-events:none;}
+  .army{cursor:pointer;} .node-hit{cursor:pointer;}
+  .sel-ring{fill:none;stroke:var(--gold);stroke-width:3;stroke-dasharray:4 3;}
+  .prodrow{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--card2);}
+  .prodrow .nm{flex:1;} .prodrow .cost{font-size:11px;color:var(--dim);}
+  .hero{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px;margin:6px 0;}
+  .hero .loc{font-size:11px;color:var(--gold);}
+  .minibtn{font-size:11px;padding:3px 7px;}
+  .toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#111827;
+    border:1px solid var(--line);padding:8px 15px;border-radius:8px;font-size:13px;opacity:0;
+    transition:opacity .25s;pointer-events:none;z-index:9;}
+  .toast.show{opacity:1;}
+  .queue{font-size:12px;color:var(--dim);margin-top:4px;}
+  hr{border:none;border-top:1px solid var(--line);margin:10px 0;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:20;}
+  .modal-overlay.hidden{display:none;}
+  .modal{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 24px;max-width:340px;text-align:center;}
+  .modal h2{margin:0 0 10px;font-size:20px;}
+  .modal .res-line{margin:7px 0;font-size:14px;}
+  .modal button{margin-top:14px;padding:6px 18px;}
+</style>
+</head>
+<body>
+<h1>🏰 Phase C — 타일 그리드 (14×9, game.js 재사용)</h1>
+<div class="top">
+  <span class="k">턴 <b id="turn" style="color:var(--gold)">1</b></span>
+  <span id="resbar" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+  <span id="moveConfirm"></span>
+  <span style="flex:1"></span>
+  <button id="saveBtn" title="현재 판 저장(브라우저)">💾</button>
+  <button id="loadBtn" title="저장된 판 불러오기">📂</button>
+  <button id="exportBtn" title="세이브 파일로 내보내기">⬇</button>
+  <button id="importBtn" title="세이브 파일 가져오기">⬆</button>
+  <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+  <button id="newBtn" title="새 게임">🆕</button>
+  <button id="castleBtn">🏰 성 내정</button>
+  <button id="endturn">⏭ 턴 종료</button>
+</div>
+<div class="wrap">
+  <div class="mapbox"><svg id="map" viewBox="0 0 776 506" preserveAspectRatio="xMidYMid meet"></svg></div>
+  <div id="panel" class="panel"></div>
+</div>
+<div class="k" style="font-size:12px;margin-top:8px">채집·생산으로 군을 키워 <b>적 성(🏰 우측)을 함락하면 승리</b>. 부대가 적과 만나면 전투 엔진으로 교전하고, 성 수비는 성벽 보정을 받습니다.</div>
+<div class="toast" id="toast"></div>
+<div id="modal" class="modal-overlay hidden"><div class="modal" id="modalBody"></div></div>
+
+<script>
+/* ==== engine.js 인라인 (build.js 생성, 직접 수정 금지) ==== */
+/* =====================================================================
+   mini4x 전투 엔진 — 단일 캔노니컬 소스 (node + 브라우저 공용)
+   - 규칙: 기획서 §7 (3병과×2클래스, 3열, 특수 확률, 특화 ×1.4,
+           전열 피해 분산 ②, 창병 요격, 티어 배율)
+   - node:    const E = require('./engine.js');  E.simulate(...)
+   - 브라우저: <script>로 인라인되면 UNITS/simulate 등이 그대로 전역
+   - 수치는 여기서만 고친다 → verify.js / 프로토타입이 함께 따라옴
+   ===================================================================== */
+'use strict';
+
+const CONST = { FLOOR:0.15, FALLBACK:0.85, SPEC_MULT:1.4, SPLIT:0.6, COUNTER_MULT:2.0, HERO_BUFF:0.20,
+  BATTLE_ROUNDS:40 };  // 게임·검증 공용 전투 라운드 캡. HP×1.0에서 전투는 ~30R에 결착 → 40R이면 무승부 소멸. game.js/verify.js가 이 값을 참조(드리프트 방지).
+
+const UNITS = {
+  "중갑보병":{hp:120,atk:8, df:12,proc:0.0, row:"front",kind:"tank",  desc:"방어 탱커"},
+  "창병":   {hp:100,atk:12,df:6, proc:0.55,row:"front",kind:"spear", desc:"대기병 요격"},
+  "장궁병": {hp:65, atk:16,df:3, proc:0.35,row:"back", kind:"gen_am",desc:"범용(앞+중)"},
+  "석궁병": {hp:60, atk:16,df:3, proc:0.0, row:"back", kind:"spec",  desc:"대보병 특화"},
+  "경기병": {hp:95, atk:17,df:5, proc:0.45,row:"mid",  kind:"gen_ab",desc:"범용(앞+뒤)"},
+  "중기병": {hp:105,atk:12,df:8, proc:0.0, row:"mid",  kind:"spec",  desc:"대보병 돌격"},
+  // ===== 몬스터 (PvE 전용, 밸런스 검증 대상 아님) =====
+  "늑대":  {hp:70, atk:14,df:3, proc:0.0, row:"front",kind:"tank", desc:"기동형 야수", monster:true},
+  "고블린":{hp:60, atk:10,df:4, proc:0.0, row:"front",kind:"tank", desc:"약한 몬스터", monster:true},
+  "오크":  {hp:150,atk:16,df:10,proc:0.0, row:"front",kind:"tank", desc:"강력한 전위", monster:true},
+  "하피":  {hp:70, atk:17,df:3, proc:0.0, row:"back", kind:"tank", desc:"후방 비행 위협", monster:true},
+  "오우거":{hp:280,atk:26,df:12,proc:0.0, row:"front",kind:"tank", desc:"거대 보스", monster:true},
+};
+const NAMES = Object.keys(UNITS);
+const ROWS  = ["front","mid","back"];
+const ROWKO = {front:"앞 · 보병", mid:"중 · 기병", back:"뒤 · 궁병"};
+
+const tierMult = t => 1 + (t-1)*0.15;
+const dmg = (a,d) => Math.max(a*CONST.FLOOR, a-d);
+
+function makeArmy(comp, hero, mods){    // mods: {유닛명:{atk,df,hp}} 병종별 스탯 배율(연구)
+  const rows = {front:[], mid:[], back:[]};
+  // hero: true → +HERO_BUFF, 숫자 → 그 비율만큼 버프(연구·성벽 등 합산용), false/0 → 없음
+  const buff = hero===true ? CONST.HERO_BUFF : (typeof hero==="number" ? hero : 0);
+  for(const c of comp){
+    if(!c || c.count<=0) continue;
+    const u=UNITS[c.name], tm=tierMult(c.tier||1), hb=1+buff;
+    const m = mods && mods[c.name] ? mods[c.name] : null;
+    const st={name:c.name,row:u.row,kind:u.kind,proc:u.proc,tier:c.tier||1,
+      atk:u.atk*tm*hb*((m&&m.atk)||1), df:u.df*tm*hb*((m&&m.df)||1), maxhp:u.hp*tm*hb*((m&&m.hp)||1), init:c.count};
+    st.pool=st.maxhp*c.count;
+    rows[u.row].push(st);
+  }
+  return rows;
+}
+const aliveCount = s => s.pool>0 ? Math.ceil(s.pool/s.maxhp) : 0;
+const dead = s => s.pool<=0;
+function frontmost(r){ for(const x of ROWS){ const L=r[x].filter(s=>!dead(s)); if(L.length) return L[0]; } return null; }
+function rowTarget(r,x){ const L=r[x].filter(s=>!dead(s)); return L.length?L[0]:null; }
+function spearsFront(r){ return r.front.filter(s=>!dead(s)&&s.kind==="spear"); }
+function allStacks(r){ return [...r.front,...r.mid,...r.back].filter(s=>!dead(s)); }
+function wiped(r){ return frontmost(r)===null; }
+
+function planAttacks(att, enemy, ev){
+  const A=[];
+  for(const s of allStacks(att)){
+    const a=aliveCount(s), base=s.atk, k=s.kind;
+    if(a<=0) continue;
+    if(k==="tank"||k==="spear"){ const t=frontmost(enemy); if(t) A.push([t,base,a,s]); }
+    else if(k==="spec"){ let t=rowTarget(enemy,"front");
+      if(t) A.push([t,base*CONST.SPEC_MULT,a,s]);
+      else { t=frontmost(enemy); if(t) A.push([t,base*CONST.FALLBACK,a,s]); } }
+    else { const deep = k==="gen_am"?"mid":"back";
+      if(Math.random()<s.proc){ const d=rowTarget(enemy,deep);
+        if(d){ const ft=frontmost(enemy); A.push([ft,base*CONST.SPLIT,a,s]); A.push([d,base*CONST.SPLIT,a,s]); if(ev) ev.proc++; }
+        else { const t=frontmost(enemy); if(t) A.push([t,base*CONST.FALLBACK,a,s]); } }
+      else { const t=frontmost(enemy); if(t) A.push([t,base,a,s]); } }
+  }
+  return A;
+}
+function resolveRound(A,B,ev){
+  const pa=planAttacks(A,B,ev), pb=planAttacks(B,A,ev);
+  const dm=new Map(), add=(s,v)=>dm.set(s,(dm.get(s)||0)+v);
+  function tally(plan, def){
+    for(const [t,ap,cnt,src] of plan){
+      if(!t||dead(t)) continue;
+      const amount = cnt*dmg(ap,t.df);
+      if(t.row==="front"){                       // ② 전열 피해 분산
+        const fs=def.front.filter(s=>!dead(s));
+        let tot=fs.reduce((x,s)=>x+aliveCount(s),0);
+        if(tot<=0) add(t,amount); else for(const s of fs) add(s, amount*aliveCount(s)/tot);
+      } else add(t, amount);
+      if(src.row==="mid" && t.row==="front"){     // 창병 요격
+        for(const sp of spearsFront(def)){
+          let nc=0, eng=aliveCount(sp);
+          for(let i=0;i<eng;i++) if(Math.random()<sp.proc) nc++;
+          if(nc>0){ add(src, nc*dmg(sp.atk*CONST.COUNTER_MULT, src.df)); if(ev) ev.counter+=nc; }
+        }
+      }
+    }
+  }
+  tally(pa,B); tally(pb,A);
+  for(const [s,v] of dm) s.pool-=v;
+}
+function snapshot(r){
+  const live=allStacks(r).map(s=>({name:s.name,row:s.row,tier:s.tier,alive:aliveCount(s),init:s.init}));
+  const gone=[...r.front,...r.mid,...r.back].filter(s=>dead(s)).map(s=>({name:s.name,row:s.row,tier:s.tier,alive:0,init:s.init}));
+  return live.concat(gone);
+}
+
+/* 관전용: 타임라인 프레임 포함 */
+function simulate(compA,heroA,compB,heroB,maxRounds,modsA,modsB){
+  const A=makeArmy(compA,heroA,modsA), B=makeArmy(compB,heroB,modsB);
+  const hp=r=>allStacks(r).reduce((x,s)=>x+s.pool,0);
+  const h0A=hp(A), h0B=hp(B);
+  const frames=[{round:0,A:snapshot(A),B:snapshot(B),log:"전투 개시!"}];
+  let r=0;
+  for(let i=0;i<maxRounds;i++){
+    if(wiped(A)||wiped(B)) break;
+    const ev={proc:0,counter:0};
+    const preA=allStacks(A).reduce((x,s)=>x+aliveCount(s),0), preB=allStacks(B).reduce((x,s)=>x+aliveCount(s),0);
+    resolveRound(A,B,ev); r++;
+    const postA=allStacks(A).reduce((x,s)=>x+aliveCount(s),0), postB=allStacks(B).reduce((x,s)=>x+aliveCount(s),0);
+    let log=`R${r}: 아군 -${preA-postA}, 적 -${preB-postB}`;
+    if(ev.proc) log+=` · 특수 ${ev.proc}회`;
+    if(ev.counter) log+=` · 창병 요격 ${ev.counter}`;
+    frames.push({round:r,A:snapshot(A),B:snapshot(B),log});
+  }
+  let w;
+  if(wiped(A)&&!wiped(B)) w="B";
+  else if(wiped(B)&&!wiped(A)) w="A";
+  else if(wiped(A)&&wiped(B)) w="draw";
+  else { const fa=h0A?hp(A)/h0A:0, fb=h0B?hp(B)/h0B:0; w=Math.abs(fa-fb)<0.05?"draw":(fa>fb?"A":"B"); }
+  return {frames, w, rounds:r,
+    survA:allStacks(A).reduce((x,s)=>x+aliveCount(s),0),
+    survB:allStacks(B).reduce((x,s)=>x+aliveCount(s),0)};
+}
+/* 검증용: 가벼운 승패 + 승률 */
+function battle(compA,heroA,compB,heroB,maxRounds){ return simulate(compA,heroA,compB,heroB,maxRounds).w; }
+function winrate(compA,compB,opts){
+  opts=opts||{}; const t=opts.trials||500, mr=opts.maxRounds||CONST.BATTLE_ROUNDS, hA=!!opts.heroA, hB=!!opts.heroB;
+  let w=0; for(let i=0;i<t;i++) if(battle(compA,hA,compB,hB,mr)==="A") w++; return w/t;
+}
+
+const API = { CONST, UNITS, NAMES, ROWS, ROWKO, tierMult, dmg, makeArmy, simulate, battle, winrate };
+if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate; self.Engine = API; }
+
+/* ==== game.js 인라인 (build.js 생성, 직접 수정 금지) ==== */
+/* =====================================================================
+   mini4x 게임 로직 — 단일 캔노니컬 모듈 (DOM 없음, node + 브라우저 공용)
+   - HTML 게임(렌더링)과 sim(플레이테스트)이 이 하나를 공유.
+   - 모든 함수는 게임 상태 g 를 인자로 받는 순수 로직. 렌더/토스트/애니메이션 없음.
+   - node:    const Game = require('./game.js');  Game.endTurn(g)
+   - 브라우저: engine.js + game.js 인라인 → 전역 Game 로 노출
+   ===================================================================== */
+(function(global){
+  "use strict";
+  const E = (typeof module!=="undefined" && module.exports) ? require("./engine.js")
+          : { UNITS: global.UNITS || UNITS, simulate: global.simulate || simulate,
+              CONST: (global.Engine&&global.Engine.CONST) || (typeof CONST!=="undefined"?CONST:null) };
+  const UNITS = E.UNITS, simulate = E.simulate;
+  const BATTLE_ROUNDS = (E.CONST && E.CONST.BATTLE_ROUNDS) || 40;  // 전투 라운드 캡(엔진 공유 상수). 브라우저 폴백 40.
+  let API;  // 하단에서 채움. setMap 이 맵 교체 시 노출 참조를 갱신하는 데 필요(TDZ 회피).
+
+  // ---- 상수 ----
+  const RES=["식량","목재","석재","철"];
+  const GATHER_BASE=6, GATHER_HERO=1.5, ARMY_CAP=20, ECON_CAP=20, WOUND_RATE=0.35;
+  const ARMY_SLOTS_BASE=3;  // 운용 부대 수 상한(§9): 기본 + 성 레벨 + 연구. 총군사력 = 부대수 × ARMY_CAP
+  const UPKEEP_RATE=0.2, UPKEEP_FREE=20;  // 식량 유지비: FREE 초과 병력 1당 매턴 소모(대군 소프트 상한). 고갈 시 생산 중단
+  const XP_REWARD={사냥:1,토벌:2,레이드:3};      // 몬스터 처치 → 경험치 아이템
+  const PROMOTE_COST={1:2,2:4};                  // ★1→2 : 2, ★2→3 : 4 (경험치 아이템)
+  const wallCost=lv=>({석재:25+lv*20,철:5+lv*4}); // 성벽 보강(반복형 석재 소비처) — 수성 방어↑
+  const HERO_BUFF=0.20, HP_SCALE=1.0;  // HP 전역 배율. 1.4는 티어테스트 잔재로 삼각(기병>궁병)을 깨뜨려 1.0으로 정정(§7). 1.0=항등 → 실제 전투가 verify.js 검증 조건과 일치.
+  // ---- 영웅 등급(★1~3): 등급이 버프 세기 결정 ----
+  const GRADE_BUFF={1:0.15,2:0.20,3:0.28}, GRADE_GATHER={1:1.4,2:1.5,3:1.7};
+  // ---- 선술집 · 토벌 점수 ----
+  const HERO_NAMES=["기사 아론","현자 밀라","용병 카일","사제 리나","궁정관 세드","기공사 도라","방백 유리","척후장 벤","연금술사 나임","백부장 그렌"];
+  const TAVERN_COST={목재:20,석재:15,철:10}, POOL_CAP=3, TAVERN_GAP=3;
+  const RECRUIT_COST={1:{식량:30,목재:20},2:{식량:50,목재:35,철:20}};
+  const SPECIAL_COST={토벌:15,식량:60,철:40};        // ★3 특별 영입(토벌 점수 소모)
+  const SUBDUE_REWARD={토벌:3,레이드:10};             // 토벌·레이드 처치 시 토벌 점수
+  const UNIT_COST={중갑보병:{식량:2,목재:2,철:2},창병:{식량:2,목재:3,철:2},장궁병:{식량:1,목재:3,철:1},석궁병:{식량:1,목재:2,철:2},경기병:{식량:4,목재:2,철:3},중기병:{식량:3,목재:1,철:4}};
+  // ---- 티어 (T1 기본 · T2 정예 · T3 상급). 스탯 배율은 engine.tierMult, 여기선 비용/키 관리 ----
+  const TIER_MAX=3, TIER_NAME={1:"기본",2:"정예",3:"상급"};
+  // 복합 키: T1은 순수 이름, T2+는 "이름@T2" (기존 저장구조 하위호환)
+  const uk=(name,tier)=>(tier&&tier>1)?name+"@T"+tier:name;
+  const baseOf=k=>{const i=k.indexOf("@T");return i<0?k:k.slice(0,i);};
+  const tierOf=k=>{const i=k.indexOf("@T");return i<0?1:(+k.slice(i+2)||1);};
+  const unitLabel=k=>{const t=tierOf(k);return t>1?baseOf(k)+" T"+t:baseOf(k);};
+  // 고티어 = 비용↑, 특히 철(기획서: 고티어 철 병목). T2 ×1.6, T3 ×2.4 + 티어당 철 추가
+  function costOf(name,tier){tier=tier||1;const base=UNIT_COST[name],mul=1+0.6*(tier-1),c={};
+    for(const r in base)c[r]=Math.round(base[r]*mul);c.철=(c.철||0)+2*(tier-1);return c;}
+  const CASTLE_UP_COST={목재:20,석재:15,철:10};
+  const BUILDINGS={ "병영":{cost:{목재:15,석재:10,철:5},units:["중갑보병","창병"],icon:"🛡"},
+    "궁수대":{cost:{목재:15,석재:5,철:10},units:["장궁병","석궁병"],icon:"🏹"},
+    "마구간":{cost:{목재:10,석재:10,철:15},units:["경기병","중기병"],icon:"🐎"} };
+  // 유닛 → 생산 건물 매핑, 건물 레벨업 비용 (레벨↑ = 생산 가능 티어↑, 최대 TIER_MAX)
+  const UNIT_BLD={}; for(const b in BUILDINGS) for(const u of BUILDINGS[b].units) UNIT_BLD[u]=b;
+  function bUpCost(key,lv){const base=BUILDINGS[key].cost,c={};for(const r in base)c[r]=Math.round(base[r]*(0.8+0.7*lv));c.철=(c.철||0)+5*lv;return c;}
+  const ECON_BUILDINGS={ 농장:{icon:"🌾",cost:{목재:8,석재:4,철:2},res:"식량",amt:3},
+    벌목장:{icon:"🪵",cost:{목재:4,석재:6,철:4},res:"목재",amt:3},
+    채석장:{icon:"🪨",cost:{목재:8,석재:2,철:4},res:"석재",amt:2},
+    철광산:{icon:"⚒",cost:{목재:8,석재:6,철:2},res:"철",amt:2},
+    병원:{icon:"🏥",cost:{목재:10,석재:8,철:6},res:null} };
+  const UNIV_COST={목재:25,석재:20,철:15};
+  const GROUPS={보병:["중갑보병","창병"],궁병:["장궁병","석궁병"],기병:["경기병","중기병"]};
+  // ---- 시간 기반 이동 속도: 병종 그룹별 타일 1칸 통과 소요 틱(작을수록 빠름). 섞이면 그룹 단순 평균. ----
+  const MOVE_TICKS={보병:4,궁병:3,기병:2};
+  const UNIT_GROUP={}; for(const grp in GROUPS) for(const u of GROUPS[grp]) UNIT_GROUP[u]=grp;
+  const STATNAME={atk:"공격",df:"방어",hp:"체력"};
+  // 시간 기반 이동으로 수비가 강해져(웨이브가 느리게 도착) 구값(waveSize30)은 AI 무력화 → 상향.
+  // ws40이면 AI 100%(과함), ws38이면 ~40%(명확한 위협+능동 방어로 극복 가능). §10 밸런스 참조.
+  const AI={budgetPerTurn:5,waveSize:38,homeCap:70,tierEvery:16,waveCap:2,waveFrac:0.85}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
+
+  const RESEARCH={
+    "축성술":{cat:"전투",sub:"공성·수성",req:[],cost:{목재:15,철:15},turns:2,desc:"내 성 수비 +15%"},
+    "공성술":{cat:"전투",sub:"공성·수성",req:["축성술"],cost:{목재:20,철:20},turns:3,desc:"공성 시 적 성벽 완화"},
+    "영농":{cat:"내정",sub:"경제",req:[],cost:{식량:15,목재:15},turns:2,desc:"자원 건물 수입 +50%"},
+    "대장간":{cat:"내정",sub:"경제",req:[],cost:{목재:15,철:20},turns:2,desc:"병력 생산 속도 +1"},
+    "행군술":{cat:"내정",sub:"경제",req:[],cost:{식량:15,철:15},turns:2,desc:"모든 부대 이동력 +1"},
+    "채굴법":{cat:"내정",sub:"경제",req:[],cost:{목재:20,석재:15},turns:2,desc:"자원지 채집량 +2"},
+    "정밀 채굴":{cat:"내정",sub:"경제",req:["채굴법"],cost:{목재:25,석재:20},turns:3,desc:"자원지 채집량 +2 (누적)"},
+    "군제 개편":{cat:"내정",sub:"경제",req:[],cost:{식량:20,목재:20,철:10},turns:3,desc:"운용 부대 수 +1"},
+  };
+  (function(){ const base={atk:{목재:12,철:12},df:{목재:8,철:16},hp:{식량:12,철:14}};
+    for(const g in GROUPS) for(const st in STATNAME){ const c1=base[st],c2={}; for(const r in c1)c2[r]=Math.round(c1[r]*1.6);
+      const k1=`${g} ${STATNAME[st]} I`,k2=`${g} ${STATNAME[st]} II`;
+      RESEARCH[k1]={cat:"전투",sub:g,req:[],cost:c1,turns:2,desc:`${g} ${STATNAME[st]} +15%`,mod:{group:g,stat:st,mul:1.15}};
+      RESEARCH[k2]={cat:"전투",sub:g,req:[k1],cost:c2,turns:3,desc:`${g} ${STATNAME[st]} +15% (누적)`,mod:{group:g,stat:st,mul:1.15}}; } })();
+
+  // ---- 맵 (로직: 위상만. 좌표는 렌더러 담당) — setMap 으로 교체 가능(노드↔타일) ----
+  const RESPAWN_DELAY=8;
+  // 기본 맵: 17노드 (침공 회랑 P-FOOD-NORTH-CROSS-STONE-RUIN-E, 둥지는 가지)
+  const DEFAULT_MAP={
+    NODES:{ P:{name:"아군 성",type:"castle",owner:"P"}, FOOD:{name:"곡창",type:"resource",res:"식량"},
+      WOOD:{name:"삼림",type:"resource",res:"목재"}, DEN3:{name:"도적 소굴",type:"den"}, DEN1:{name:"늑대 둥지",type:"den"},
+      GROVE:{name:"남부 삼림",type:"resource",res:"목재"}, NORTH:{name:"북부 평원",type:"plain"},
+      CROSS:{name:"중앙 교차로",type:"plain"}, SOUTH:{name:"남부 평원",type:"plain"},
+      ANCIENT:{name:"고대성",type:"ancient",owner:null}, DEN2:{name:"고블린 소굴",type:"den"}, DEN4:{name:"오크 진지",type:"den"},
+      STONE:{name:"채석장",type:"resource",res:"석재"}, IRON:{name:"철광",type:"resource",res:"철"},
+      FOOD2:{name:"동부 곡창",type:"resource",res:"식량"}, RUIN:{name:"폐허 평원",type:"plain"},
+      E:{name:"적 성",type:"castle",owner:"E"} },
+    EDGES:[
+      ["P","FOOD",1],["P","WOOD",1],["P","DEN3",1],
+      ["FOOD","NORTH",1],["FOOD","DEN1",1],["WOOD","GROVE",1],
+      ["DEN3","DEN1",1],["DEN1","NORTH",1],["GROVE","SOUTH",1],
+      ["NORTH","CROSS",1],["SOUTH","CROSS",1],
+      ["CROSS","STONE",2],["CROSS","ANCIENT",1],["CROSS","DEN2",2],["CROSS","DEN4",2],
+      ["SOUTH","DEN4",2],["SOUTH","IRON",2],
+      ["ANCIENT","DEN4",1],["ANCIENT","STONE",2],
+      ["DEN2","STONE",1],["DEN4","IRON",1],
+      ["STONE","RUIN",1],["STONE","FOOD2",1],["IRON","RUIN",1],
+      ["FOOD2","E",1],["RUIN","E",1],["IRON","E",2]],
+    MONSTERS:[
+      {node:"DEN1", name:"늑대 무리",  mtier:"사냥", comp:{늑대:12},            reward:{식량:25,목재:20}},
+      {node:"DEN3", name:"도적 소굴",  mtier:"사냥", comp:{고블린:8,늑대:4},     reward:{식량:20,철:12}},
+      {node:"DEN2", name:"고블린 소굴", mtier:"토벌", comp:{오크:6,하피:6,오우거:2}, reward:{철:40,석재:30,식량:30}},
+      {node:"DEN4", name:"오크 진지",  mtier:"토벌", comp:{오크:10,오우거:3,하피:5}, reward:{철:35,목재:30,석재:25}},
+      {node:"ANCIENT", name:"고대 생물", mtier:"레이드", comp:{오우거:6,오크:12,하피:8}, reward:{철:70,석재:50,식량:50}},
+    ],
+  };
+  // 교체 가능한 현재 맵 (let → 클로저가 항상 최신 참조). setMap 으로 노드↔타일 전환.
+  let NODES, EDGES, ADJ, MONSTERS, MSPAWN;
+  function setMap(m){ NODES=m.NODES; EDGES=m.EDGES; MONSTERS=m.MONSTERS||[]; MSPAWN=m.spawn||null;
+    ADJ={}; for(const id in NODES) ADJ[id]=[];
+    for(const[a,b,c]of EDGES){ADJ[a].push({to:b,cost:c});ADJ[b].push({to:a,cost:c});}
+    if(typeof API!=="undefined"&&API){ API.NODES=NODES; API.EDGES=EDGES; API.ADJ=ADJ; API.MONSTERS=MONSTERS; } // 노출 참조 갱신
+    return API; }
+  setMap(DEFAULT_MAP);
+  // 랜덤 스폰(타일 맵): 성/인접이 아닌 빈 평지 타일에 몬스터 배치
+  const randomTile=g=>{const cands=Object.keys(NODES).filter(id=>NODES[id].type==="plain"&&!g.armies.some(a=>a.node===id)&&!ADJ[id].some(n=>NODES[n.to].type==="castle"));
+    return cands.length?cands[Math.floor(Math.random()*cands.length)]:null;};
+  function spawnRoamer(g,tmpl){const node=randomTile(g); if(!node)return null;
+    const a={id:"MON"+(g._nid++),side:"M",node,mp:0,maxMp:0,name:tmpl.name,mtier:tmpl.mtier,comp:{...tmpl.comp},hero:null,reward:{...tmpl.reward},roamer:true};
+    g.armies.push(a); return a;}
+  function dijkstra(start,maxCost){const dist={[start]:0},prev={},pq=[[0,start]];
+    while(pq.length){pq.sort((x,y)=>x[0]-y[0]);const[d,u]=pq.shift();if(d>dist[u])continue;
+      for(const{to,cost}of ADJ[u]){const nd=d+cost;if(nd<=maxCost&&(dist[to]===undefined||nd<dist[to])){dist[to]=nd;prev[to]=u;pq.push([nd,to]);}}}
+    return{dist,prev};}
+  function pathTo(t,prev){const p=[t];let c=t;while(prev[c]!==undefined){c=prev[c];p.unshift(c);}return p;}
+  const mkMonster=t=>({id:"MON_"+t.node,side:"M",node:t.node,mp:0,maxMp:0,name:t.name,mtier:t.mtier,comp:{...t.comp},hero:null,reward:{...t.reward}});
+
+  // ---- 상태 ----
+  function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
+    turn:1, res:{식량:45,목재:45,석재:25,철:25},
+    castle:{level:1,queue:[],buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null},
+    research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
+    raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
+    quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
+    heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
+    armies:[
+      {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
+    ], over:false, winner:null, _nid:1000 };
+  }
+  function newGame(){ const g=_baseGame();
+    if(MSPAWN){ for(let i=0;i<(MSPAWN.count||4);i++) spawnRoamer(g, MSPAWN.pool[i%MSPAWN.pool.length]);
+      if(MSPAWN.raid && NODES.ANCIENT) g.armies.push(mkMonster({node:"ANCIENT",...MSPAWN.raid})); }
+    else for(const m of MONSTERS) g.armies.push(mkMonster(m));
+    return g;
+  }
+  const newId=(g,p)=>p+(g._nid++);
+
+  // ---- 헬퍼 ----
+  const findArmy=(g,id)=>g.armies.find(a=>a.id===id);
+  const armiesAt=(g,n)=>g.armies.filter(a=>a.node===n);
+  const pArmyCount=g=>g.armies.filter(a=>a.side==="P").length;
+  // 운용 부대 수: 기본 3, 성 Lv3→4·Lv5→5 (연구 '군제 개편' +1), 최대 5
+  const ARMY_SLOTS_MAX=5;
+  const armySlots=g=>Math.min(ARMY_SLOTS_MAX, ARMY_SLOTS_BASE+(g.castle.level>=3?1:0)+(g.castle.level>=5?1:0)+(g.research.done["군제 개편"]?1:0));
+  const canAddArmy=g=>pArmyCount(g)<armySlots(g);
+  const heroById=(g,id)=>g.heroes.find(h=>h.id===id);
+  const troops=a=>Object.values(a.comp).reduce((x,y)=>x+y,0);
+  const canAfford=(g,c)=>Object.entries(c).every(([r,v])=>g.res[r]>=v);
+  const pay=(g,c)=>{for(const r in c)g.res[r]-=c[r];};
+  const hasR=(g,k)=>!!g.research.done[k];
+  const pBaseMp=g=>5+(hasR(g,"행군술")?1:0);   // 확장 맵 대응(회랑 P→E≈7)
+  const cityHero=g=>g.heroes.find(h=>h.type==="내정"&&h.loc==="castle");
+  const buildRate=g=>{const h=cityHero(g);return 1+(g.castle.level-1)+(h?(h.grade>=3?2:1):0)+(hasR(g,"대장간")?1:0);};
+  const aiTierOf=g=>Math.min(TIER_MAX,1+Math.floor(g.turn/(AI.tierEvery||14)));   // AI 티어 성장
+  const aiCombatBuff=g=>0.06+0.03*(aiTierOf(g)-1);                                // AI 지휘관 정예화(영웅 대칭)
+  const castleBaseIncome=g=>({식량:3+g.castle.level,목재:2+g.castle.level,석재:1+g.castle.level,철:g.castle.level+2});
+  function econIncome(g){const inc={식량:0,목재:0,석재:0,철:0},mult=hasR(g,"영농")?1.5:1;
+    for(const k in ECON_BUILDINGS){const b=ECON_BUILDINGS[k],n=g.castle.econ[k]||0;if(b.res&&n)inc[b.res]+=Math.round(b.amt*n*mult);}return inc;}
+  function gatherOf(g,a){const n=NODES[a.node];if(a.side!=="P"||n.type!=="resource")return null;
+    const hero=a.hero&&heroById(g,a.hero); const isCity=hero&&hero.type==="내정";
+    const base=GATHER_BASE+(hasR(g,"채굴법")?2:0)+(hasR(g,"정밀 채굴")?2:0);
+    return {res:n.res,amt:Math.round(base*(isCity?GRADE_GATHER[hero.grade]:1))};}
+  // 총 병력(주둔군 + 아군 부대) → 식량 유지비
+  const totalTroops=g=>Object.values(g.castle.garrison).reduce((x,y)=>x+y,0)+g.armies.filter(a=>a.side==="P").reduce((x,a)=>x+troops(a),0);
+  const foodUpkeep=g=>Math.ceil(Math.max(0,totalTroops(g)-UPKEEP_FREE)*UPKEEP_RATE);
+  function income(g){const inc={식량:0,목재:0,석재:0,철:0},base=castleBaseIncome(g),e=econIncome(g);
+    for(const r of RES)inc[r]+=base[r]+e[r];
+    for(const a of g.armies){const gt=gatherOf(g,a);if(gt)inc[gt.res]+=gt.amt;}
+    inc.식량-=foodUpkeep(g);   // 유지비 차감(순수입, 음수 가능)
+    return inc;}
+
+  // ---- 연구 버프 → 전투 mods ----
+  function researchMods(g){const m={};
+    for(const k in RESEARCH){const r=RESEARCH[k];if(r.mod&&g.research.done[k]){for(const n of GROUPS[r.mod.group]){m[n]=m[n]||{};m[n][r.mod.stat]=(m[n][r.mod.stat]||1)*r.mod.mul;}}}return m;}
+  const HP_MODS=Object.fromEntries(Object.keys(UNITS).map(n=>[n,{hp:HP_SCALE}]));
+  function mergeMods(a,b){if(!a)return b;if(!b)return a;const m={};
+    for(const n of new Set([...Object.keys(a),...Object.keys(b)])){m[n]={};for(const s of["atk","df","hp"]){const v=((a[n]&&a[n][s])||1)*((b[n]&&b[n][s])||1);if(v!==1)m[n][s]=v;}}return m;}
+
+  // ---- 전투 ----
+  const compArr=a=>Object.entries(a.comp).map(([k,count])=>({name:baseOf(k),count,tier:tierOf(k)}));
+  const hasCombatHero=(g,a)=>a.hero&&heroById(g,a.hero)?.type==="전투";
+  function removeArmy(g,a){g.heroes.forEach(h=>{if(h.loc===a.id)h.loc="idle";});g.armies=g.armies.filter(x=>x!==a);}
+  function resolveBattle(g,attacker,defender,node){
+    const fort=NODES[node].type==="castle"&&NODES[node].owner===defender.side;
+    const ancientHold=node==="ANCIENT"&&NODES.ANCIENT.owner===defender.side; // 고대성 방어 보정
+    const aHero=hasCombatHero(g,attacker)?heroById(g,attacker.hero):null;
+    const dHero=hasCombatHero(g,defender)?heroById(g,defender.hero):null;
+    let aB=aHero?GRADE_BUFF[aHero.grade]:0, dB=dHero?GRADE_BUFF[dHero.grade]:0;
+    if(fort){ dB+=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22; if(defender.side==="P"&&hasR(g,"축성술"))dB+=0.15; }
+    if(node==="P"&&defender.side==="P") dB+=Math.min(0.30,(g.castle.wall||0)*0.05);  // 성벽 보강
+    if(ancientHold) dB+=0.20;
+    if(attacker.side==="E") aB+=aiCombatBuff(g);   // AI 지휘관 정예화
+    if(defender.side==="E") dB+=aiCombatBuff(g);
+    const modsA=mergeMods(attacker.side==="P"?researchMods(g):null,HP_MODS);
+    const modsB=mergeMods(defender.side==="P"?researchMods(g):null,HP_MODS);
+    const beforeA={...attacker.comp},beforeB={...defender.comp};
+    const res=simulate(compArr(attacker),aB,compArr(defender),dB,BATTLE_ROUNDS,modsA,modsB);
+    const last=res.frames[res.frames.length-1];
+    const rebuild=s=>{const c={};for(const x of last[s])if(x.alive>0)c[x.name]=(c[x.name]||0)+x.alive;return c;};
+    const rA=rebuild("A"),rB=rebuild("B");
+    const wound=(army,before,after)=>{if(army.side!=="P")return 0;let t=0;for(const u in before){const lost=(before[u]||0)-(after[u]||0);if(lost>0){const w=Math.round(lost*WOUND_RATE);if(w>0){g.castle.wounded[u]=(g.castle.wounded[u]||0)+w;t+=w;}}}return t;};
+    const sum={attacker:attacker.name,defender:defender.name,aSide:attacker.side,fort:fort||ancientHold,w:res.w,survA:res.survA,survB:res.survB,
+      heroA:aHero?aHero.name:null,heroB:dHero?dHero.name:null,
+      buffA:aHero?Math.round(GRADE_BUFF[aHero.grade]*100):0, buffB:dHero?Math.round(GRADE_BUFF[dHero.grade]*100):0,
+      gradeA:aHero?aHero.grade:0, gradeB:dHero?dHero.grade:0};
+    if(res.w==="A"){ attacker.comp=rA; const wd=wound(attacker,beforeA,rA);
+      let rw=""; if(defender.side==="M"&&defender.reward){for(const r in defender.reward)g.res[r]=(g.res[r]||0)+defender.reward[r];rw=" · 보상 "+Object.entries(defender.reward).map(([r,v])=>`${r} +${v}`).join(", ");sum.reward=defender.reward;
+        if(defender.mtier&&SUBDUE_REWARD[defender.mtier]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[defender.mtier];sum.subdue=SUBDUE_REWARD[defender.mtier];rw+=` · 토벌점수 +${sum.subdue}`;}
+        if(defender.mtier&&XP_REWARD[defender.mtier]){g.xpItems=(g.xpItems||0)+XP_REWARD[defender.mtier];sum.xp=XP_REWARD[defender.mtier];rw+=` · 경험치 +${sum.xp}`;}
+        if(defender.mtier&&defender.mtier!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}}
+      sum.result=`${attacker.name} ${defender.side==="M"?"소탕 성공":"승리"} · ${defender.name} ${defender.side==="M"?"소멸":"전멸"}${rw}`+(wd?` · 부상 ${wd}`:"");
+      removeArmy(g,defender); attacker.node=node; }
+    else if(res.w==="B"){ defender.comp=rB; const wd=wound(defender,beforeB,rB); sum.result=`${defender.name} 방어 · ${attacker.name} 전멸`+(wd?` · 부상 ${wd}`:""); removeArmy(g,attacker); }
+    else { attacker.comp=rA; defender.comp=rB; wound(attacker,beforeA,rA); wound(defender,beforeB,rB); sum.result="무승부 · 양측 생존"; }
+    return sum;
+  }
+  function defendCastle(g,attacker){
+    const defComp={...g.castle.garrison}; const pArmies=armiesAt(g,"P").filter(a=>a.side==="P"); let hero=null;
+    for(const a of pArmies){for(const u in a.comp)defComp[u]=(defComp[u]||0)+a.comp[u]; if(a.hero&&heroById(g,a.hero)?.type==="전투")hero=a.hero;}
+    const defender={side:"P",name:"수도 수비대",comp:defComp,hero};
+    const sum=resolveBattle(g,attacker,defender,"P");
+    if(sum.w==="B"){ g.castle.garrison={...defender.comp}; for(const a of pArmies){if(a.hero)heroById(g,a.hero).loc="castle";removeArmy(g,a);} }
+    else { g.castle.garrison={}; for(const a of pArmies){if(a.hero)heroById(g,a.hero).loc="idle";removeArmy(g,a);} }
+    return sum;
+  }
+  function checkVictory(g){ if(g.over)return null;
+    if(g.raid&&g.raid.holder&&g.raid.holdTurns>=g.raid.need){g.over=true;g.winner=g.raid.holder;g.winBy="raid";return g.winner;}
+    const eDef=armiesAt(g,"E").some(a=>a.side==="E"),pOnE=armiesAt(g,"E").some(a=>a.side==="P");
+    if(pOnE&&!eDef){g.over=true;g.winner="P";g.winBy="conquest";return "P";}
+    const pDef=armiesAt(g,"P").some(a=>a.side==="P")||troops({comp:g.castle.garrison})>0,eOnP=armiesAt(g,"P").some(a=>a.side==="E");
+    if(eOnP&&!pDef){g.over=true;g.winner="E";g.winBy="conquest";return "E";}
+    return null;
+  }
+  // 둥지 리스폰: 예약된 재생성이 도래하면 몬스터 재배치(점거 중이면 지연)
+  function processRespawns(g){ if(!g.respawns||!g.respawns.length)return; const keep=[];
+    for(const r of g.respawns){ if(r.at>g.turn){keep.push(r);continue;}
+      if(r.random){ if(MSPAWN)spawnRoamer(g, MSPAWN.pool[Math.floor(Math.random()*MSPAWN.pool.length)]); continue; }  // 랜덤 타일 재등장
+      const occ=armiesAt(g,r.node); if(occ.some(a=>a.side==="M"))continue;          // 이미 있음 → 취소
+      if(occ.some(a=>a.side!=="M")){keep.push({node:r.node,at:g.turn+2});continue;} // 점거 중 → 지연
+      const t=MONSTERS.find(m=>m.node===r.node); if(t)g.armies.push(mkMonster(t)); }
+    g.respawns=keep; }
+  // 레이드 수성 카운트: 보스 처치 후 ANCIENT를 한 세력이 점거하면 매턴 +1, 비거나 교전 중이면 리셋
+  function raidTick(g){ const R=g.raid; if(!R)return;
+    if(armiesAt(g,"ANCIENT").some(a=>a.side==="M")){R.holder=null;R.holdTurns=0;return;}
+    R.cleared=true;
+    const sides=[...new Set(armiesAt(g,"ANCIENT").filter(a=>a.side==="P"||a.side==="E").map(a=>a.side))];
+    if(sides.length===1){const s=sides[0];NODES.ANCIENT.owner=s; if(R.holder===s)R.holdTurns++;else{R.holder=s;R.holdTurns=1;}}
+    else{R.holder=null;R.holdTurns=0;}
+  }
+  // ---- 시간 기반 이동 (mp 대체) ----
+  // 부대 속도: comp에 존재하는 병종 그룹들의 MOVE_TICKS 단순 평균 → 틱당 진행도(1/틱).
+  function armyTicksPerTile(a){ const gs=new Set();
+    for(const k in a.comp){ if(a.comp[k]>0){ const grp=UNIT_GROUP[baseOf(k)]; if(grp)gs.add(grp); } }
+    if(!gs.size) return MOVE_TICKS.보병;
+    let s=0; for(const grp of gs) s+=MOVE_TICKS[grp]; return s/gs.size; }
+  function armySpeed(g,a){ let t=armyTicksPerTile(a);
+    if(a.side==="P" && hasR(g,"행군술")) t=Math.max(1,t-1);   // 행군술: 통과 1틱 단축(구 이동력+1 재활용)
+    return 1/t; }
+  // 목적지 지정: 부대가 여러 틱에 걸쳐 스스로 이동. 동일 목적지면 진행도 보존.
+  function orderMove(g,armyId,dest){ const a=findArmy(g,armyId); if(!a)return"부대 없음";
+    if(dest===a.node){ a.dest=null; a.path=null; a.moveProg=0; return null; }
+    if(a.dest===dest && a.path) return null;
+    const {dist,prev}=dijkstra(a.node,99); if(dist[dest]===undefined) return"도달 불가";
+    a.dest=dest; a.path=pathTo(dest,prev); a.moveProg=0; return null; }
+  function stopMove(g,armyId){ const a=findArmy(g,armyId); if(a){a.dest=null;a.path=null;a.moveProg=0;} }
+  // 한 칸 진입 + 교전 해결. {battle} 반환.
+  function enterTile(g,a,next){ a.node=next; let battle=null;
+    if(next==="P"&&a.side==="E") battle=defendCastle(g,a);          // 성 수비: 주둔군 자동 방어
+    else { const enemy=armiesAt(g,next).find(x=>x.side!==a.side); if(enemy) battle=resolveBattle(g,a,enemy,next); }
+    checkVictory(g); return {battle}; }
+  // 매 틱: 이동 중인 모든 부대를 speed 만큼 전진(엣지 비용만큼 차면 한 칸). 접촉 시 교전(정지). 마지막 전투 반환.
+  function moveTick(g){ let battle=null;
+    for(const a of [...g.armies]){ if(g.over) break;
+      if(!g.armies.includes(a)) continue;                          // 이미 제거됨
+      if(!a.dest || a.node===a.dest){ if(a.dest){a.dest=null;a.path=null;} continue; }
+      if(!a.path || a.path[0]!==a.node){                           // 경로 재계산(위치 어긋남)
+        const {dist,prev}=dijkstra(a.node,99); if(dist[a.dest]===undefined){stopMove(g,a.id);continue;} a.path=pathTo(a.dest,prev); a.moveProg=0; }
+      a.moveProg=(a.moveProg||0)+armySpeed(g,a);
+      let guard=0;
+      while(a.node!==a.dest && guard++<50){
+        const idx=a.path.indexOf(a.node), next=a.path[idx+1]; if(!next){stopMove(g,a.id);break;}
+        const cost=(ADJ[a.node].find(n=>n.to===next)||{cost:1}).cost;
+        if(a.moveProg<cost) break;                                 // 다음 타일 아직 못 감
+        a.moveProg-=cost;
+        const r=enterTile(g,a,next);
+        if(r.battle){ battle=r.battle; stopMove(g,a.id); break; }  // 접촉 전투 → 이동 정지
+        if(!g.armies.includes(a)) break;                           // 전투로 제거됨
+        if(a.node===a.dest){ stopMove(g,a.id); break; }
+      }
+    }
+    return battle; }
+
+  // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
+  const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
+  function produce(g,u,qty,tier){qty=Math.max(1,qty|0);tier=Math.max(1,Math.min(TIER_MAX,tier||1));
+    const b=UNIT_BLD[u]; if(!b||!g.castle.buildings.includes(b))return"건물 미건설";
+    const lv=g.castle.blevel[b]||1; if(tier>lv)return`${b} Lv.${lv} — T${tier} 생산 불가(레벨업 필요)`;
+    const c=costOf(u,tier),tot={};for(const r in c)tot[r]=c[r]*qty;
+    if(!canAfford(g,tot))return"자원 부족"; pay(g,tot); const key=uk(u,tier); for(let i=0;i<qty;i++)g.castle.queue.push(key); return null;}
+  // ---- 시간 소요 건설(건설잡 1개 동시). 완료 시 효과 적용. 저장 호환(순수 데이터) ----
+  const ECON_MAX=6;
+  const econCost=(k,lv)=>{const b=ECON_BUILDINGS[k].cost,c={};for(const r in b)c[r]=Math.round(b[r]*(1+lv*0.6));return c;};
+  const buildDur=(kind,lv)=>kind==="castle"?4:kind==="wall"?3:kind==="bld"?3:kind==="construct"?3:kind==="univ"?3:kind==="tavern"?2:2+Math.floor((lv||0)/2);
+  function startBuild(g,kind,key,cost,dur,label){ if(g.castle.build)return"건설 중 — 한 번에 하나만"; if(!canAfford(g,cost))return"자원 부족"; pay(g,cost); g.castle.build={kind,key:key||null,left:dur,total:dur,label}; return null; }
+  function completeBuild(g,j){
+    if(j.kind==="castle")g.castle.level++;
+    else if(j.kind==="wall")g.castle.wall=(g.castle.wall||0)+1;
+    else if(j.kind==="econ")g.castle.econ[j.key]=(g.castle.econ[j.key]||0)+1;
+    else if(j.kind==="bld")g.castle.blevel[j.key]=(g.castle.blevel[j.key]||1)+1;
+    else if(j.kind==="construct"){g.castle.buildings.push(j.key);g.castle.blevel[j.key]=1;g.castle.openBuilding=j.key;}
+    else if(j.kind==="univ")g.castle.buildings.push("대학");
+    else if(j.kind==="tavern"){g.tavern.built=true;rollCandidate(g);}
+  }
+  function construct(g,key){if(g.castle.buildings.includes(key))return null; return startBuild(g,"construct",key,BUILDINGS[key].cost,buildDur("construct"),`${key} 건설`);}
+  function upgradeBuilding(g,key){if(!g.castle.buildings.includes(key))return"미건설";
+    const lv=g.castle.blevel[key]||1; if(lv>=TIER_MAX)return"최대 레벨"; return startBuild(g,"bld",key,bUpCost(key,lv),buildDur("bld"),`${key} → T${lv+1}`);}
+  function fortifyWall(g){return startBuild(g,"wall",null,wallCost(g.castle.wall||0),buildDur("wall"),"성벽 보강");}
+  function promoteHero(g,hid){const h=heroById(g,hid); if(!h)return"영웅 없음"; if(h.grade>=3)return"이미 최고 등급"; const c=PROMOTE_COST[h.grade]; if((g.xpItems||0)<c)return"경험치 아이템 부족"; g.xpItems-=c; h.grade++; return null;}
+  function levelUp(g){return startBuild(g,"castle",null,CASTLE_UP_COST,buildDur("castle"),"성 레벨업");}
+  function buildEcon(g,k){const lv=g.castle.econ[k]||0; if(lv>=ECON_MAX)return"최대 레벨"; return startBuild(g,"econ",k,econCost(k,lv),buildDur("econ",lv),`${k} Lv${lv+1}`);}
+  function buildUniversity(g){if(g.castle.buildings.includes("대학"))return null; return startBuild(g,"univ",null,UNIV_COST,buildDur("univ"),"대학 건설");}
+  function startResearch(g,k){if(g.research.active)return"이미 연구 중"; const r=RESEARCH[k]; if(g.research.done[k])return null;
+    if(!(r.req||[]).every(q=>g.research.done[q]))return"선행 연구 필요"; if(!canAfford(g,r.cost))return"자원 부족";
+    pay(g,r.cost); g.research.active={key:k,left:r.turns}; return null;}
+  function assignHero(g,hid,loc){heroById(g,hid).loc=loc; return null;}
+  const heroEffect=h=>h.type==="전투"?`전투 참전 시 부대 전투력 +${Math.round(GRADE_BUFF[h.grade]*100)}%`
+    :`성 배치: 생산 +${h.grade>=3?2:1} · 자원지 배치: 채집 ×${GRADE_GATHER[h.grade]}`;
+  // ---- 선술집: 랜덤 후보 등장 → 재화 영입 · ★3은 토벌 점수 특별 영입 ----
+  function buildTavern(g){if(g.tavern.built)return null; return startBuild(g,"tavern",null,TAVERN_COST,buildDur("tavern"),"선술집 건설");}
+  function rollCandidate(g){if(!g.tavern.built||g.tavern.pool.length>=POOL_CAP)return;
+    const type=Math.random()<0.5?"내정":"전투", grade=Math.random()<0.6?1:2;
+    const name=HERO_NAMES[Math.floor(Math.random()*HERO_NAMES.length)];
+    g.tavern.pool.push({id:newId(g,"H"),name,type,grade}); }
+  function tavernTick(g){ if(g.tavern.built && g.turn%TAVERN_GAP===0) rollCandidate(g); }
+  function recruitHero(g,cid){const i=g.tavern.pool.findIndex(c=>c.id===cid);if(i<0)return"후보 없음";
+    const c=g.tavern.pool[i],cost=RECRUIT_COST[c.grade]; if(!canAfford(g,cost))return"자원 부족";
+    pay(g,cost); g.heroes.push({id:c.id,name:c.name,type:c.type,grade:c.grade,loc:"idle"}); g.tavern.pool.splice(i,1); return null;}
+  function specialRecruit(g){if(!g.tavern.built)return"선술집 필요";
+    if((g.subdue||0)<SPECIAL_COST.토벌)return"토벌 점수 부족";
+    const res={식량:SPECIAL_COST.식량,철:SPECIAL_COST.철}; if(!canAfford(g,res))return"자원 부족";
+    pay(g,res); g.subdue-=SPECIAL_COST.토벌;
+    const type=Math.random()<0.5?"내정":"전투", name=HERO_NAMES[Math.floor(Math.random()*HERO_NAMES.length)];
+    g.heroes.push({id:newId(g,"H"),name:name,type,grade:3,loc:"idle"}); return null;}
+  function draftAdjust(g,u,d){const gar=g.castle.garrison,draft=g.castle.draft;const avail=gar[u]||0,cur=draft[u]||0,tot=Object.values(draft).reduce((x,y)=>x+y,0);
+    if(d>0&&(cur>=avail||tot>=ARMY_CAP))return; const nv=Math.max(0,Math.min(avail,cur+d)); if(nv===0)delete draft[u];else draft[u]=nv;}
+  function makeArmyFromDraft(g){const draft=g.castle.draft,comp={};
+    for(const u in draft){comp[u]=draft[u];g.castle.garrison[u]-=draft[u];if(g.castle.garrison[u]<=0)delete g.castle.garrison[u];}
+    const army={id:newId(g,"P"),side:"P",node:"P",mp:pBaseMp(g),maxMp:pBaseMp(g),name:(g.armies.filter(a=>a.side==="P").length+1)+"군",comp,hero:null,dest:null,moveProg:0};
+    g.armies.push(army); g.castle.draft={}; return army;}
+  function deploy(g){if(Object.values(g.castle.draft).reduce((x,y)=>x+y,0)<=0)return null; if(!canAddArmy(g))return null; return makeArmyFromDraft(g);}
+  // deployTo: 성에서 출전 후 target 방면으로 목적지 지정(부대가 여러 틱에 걸쳐 이동). {army, target} 반환.
+  function deployTo(g,target){if(Object.values(g.castle.draft).reduce((x,y)=>x+y,0)<=0||!canAddArmy(g))return{army:null,target:null};
+    const army=makeArmyFromDraft(g);
+    if(target!=="P") orderMove(g,army.id,target);
+    return {army, target:(target!=="P"&&army.dest)?target:null};}
+  function disband(g,id){const a=findArmy(g,id);if(!a||a.node!=="P")return"성에서만 귀환 가능";
+    for(const u in a.comp)g.castle.garrison[u]=(g.castle.garrison[u]||0)+a.comp[u]; if(a.hero)heroById(g,a.hero).loc="idle"; removeArmy(g,a); return null;}
+
+  // ---- 적 AI ----
+  function playerCounterUnit(g){const t={front:0,mid:0,back:0};for(const a of g.armies){if(a.side!=="P")continue;for(const u in a.comp){const bu=baseOf(u);if(UNITS[bu].monster)continue;t[UNITS[bu].row]+=a.comp[u];}}
+    if(t.front+t.mid+t.back===0)return null;const mx=["front","mid","back"].reduce((a,b)=>t[a]>=t[b]?a:b);
+    return mx==="mid"?"창병":mx==="back"?"경기병":"석궁병";}
+  function pickAIUnit(counter){if(counter&&Math.random()<0.65)return counter;const pool=["중갑보병","창병","장궁병","경기병"];return pool[Math.floor(Math.random()*pool.length)];}
+  // AI 원정대 목적지: 레이드 처치됐고 E가 점거 못했으면 고대성도 노림(기획: AI도 레이드 도전)
+  function pickAITarget(g){const R=g.raid;
+    if(R&&R.cleared&&R.holder!=="E"&&Math.random()<0.55)return "ANCIENT"; return "P";}
+  // 본대에서 tgt명 뽑아 새 원정대 편성(상성·티어 유지)
+  function detach(g,home,tgt,name,role,target){const atk={},keys=Object.keys(home.comp);let moved=0;
+    for(const u of keys){if(moved>=tgt)break;const take=Math.min(home.comp[u],tgt-moved);atk[u]=take;home.comp[u]-=take;if(home.comp[u]<=0)delete home.comp[u];moved+=take;}
+    const e={id:newId(g,role==="attack"&&target==="ANCIENT"?"ER":"EA"),side:"E",node:"E",mp:4,maxMp:4,name,comp:atk,hero:null,role,target};
+    g.armies.push(e); return e;}
+  function aiTurn(g){
+    g.ai.budget+=AI.budgetPerTurn+Math.min(3,Math.floor(g.turn/14));   // 후반 눈덩이 완화(긴 판 대응)
+    let home=g.armies.find(a=>a.side==="E"&&a.node==="E"&&a.role!=="attack");
+    if(!home){home={id:newId(g,"EH"),side:"E",node:"E",mp:0,maxMp:0,name:"적 본대",comp:{},hero:null,role:"home"};g.armies.push(home);}
+    const cu=playerCounterUnit(g), t=aiTierOf(g); let guard=0;
+    while(guard++<60&&troops(home)<AI.homeCap){const u=pickAIUnit(cu),c=AI_UNIT_COST[u]*t;if(g.ai.budget<c)break;g.ai.budget-=c;const key=uk(u,t);home.comp[key]=(home.comp[key]||0)+1;}
+    // 동시 원정대 수 제한(§9 부대 수 상한 대칭) — 무한 웨이브 방지
+    const waves=g.armies.filter(a=>a.side==="E"&&a.role==="attack").length;
+    const bossAlive=armiesAt(g,"ANCIENT").some(a=>a.side==="M");
+    const raiding=g.armies.some(a=>a.side==="E"&&a.target==="ANCIENT");
+    if(waves<(AI.waveCap||2)){
+      if(bossAlive&&!raiding&&troops(home)>=40) detach(g,home,Math.floor(troops(home)*0.7),"적 레이드대","attack","ANCIENT");
+      else if(troops(home)>=AI.waveSize) detach(g,home,Math.floor(troops(home)*(AI.waveFrac||0.7)),"적 원정대","attack",pickAITarget(g));
+    }
+    for(const e of g.armies.filter(a=>a.side==="E"&&a.role==="attack")){ orderMove(g,e.id,e.target||"P"); }   // 목적지만 지정, 이동은 moveTick
+    return null;
+  }
+
+  // ---- 온보딩 퀘스트 (초반 빌드 가이드 겸 튜토리얼) ----
+  // 선형 체인. done(g)=상태를 받는 순수 조건 함수. 달성 시 questTick 이 보상 지급 후 다음 목표로.
+  // 데이터는 여기(단일 소스), 표시는 ui.js renderQuests. 시간모델 무관 → 실시간 전환해도 tick 에서 그대로.
+  const QUESTS=[
+    {id:"farm",  name:"터전 다지기", desc:"🌾 농장을 지어 식량 수입을 늘리자.",                reward:{목재:15},       done:g=>(g.castle.econ["농장"]||0)>=1},
+    {id:"gather",name:"첫 채집대",   desc:"⛏ 부대를 자원지(곡창·삼림 등)로 보내 채집을 시작하자.", reward:{목재:15},       done:g=>g.armies.some(a=>a.side==="P"&&NODES[a.node]&&NODES[a.node].type==="resource")},
+    {id:"hunt",  name:"첫 사냥",     desc:"⚔ 약한 둥지(늑대·도적)를 소탕해 경험치를 얻자.",       reward:{철:10},         done:g=>(g.xpItems||0)>=1},
+    {id:"barr",  name:"병종 확장",   desc:"🏹 궁수대나 마구간을 지어 병종을 늘리자.",             reward:{식량:20},       done:g=>g.castle.buildings.includes("궁수대")||g.castle.buildings.includes("마구간")},
+    {id:"univ",  name:"지식의 전당", desc:"🎓 대학을 지어 연구를 해금하자.",                     reward:{목재:10,철:10}, done:g=>g.castle.buildings.includes("대학")},
+    {id:"res",   name:"첫 연구",     desc:"🔬 연구를 하나 완료해 부대를 강화하자.",               reward:{철:15},         done:g=>Object.keys(g.research.done||{}).length>=1},
+    {id:"hero",  name:"영웅 영입",   desc:"🍺 선술집을 짓고 새 영웅을 영입하자.",                 reward:{식량:25},       done:g=>g.heroes.length>=3},
+    {id:"subdue",name:"토벌 원정",   desc:"☠ 강한 둥지(고블린·오크 진지)를 토벌하자.",            reward:{철:20,석재:20}, done:g=>(g.subdue||0)>=1},
+  ];
+  function questTick(g){
+    if(!g.quests) g.quests={done:[],idx:0};
+    const completed=[];
+    while(g.quests.idx<QUESTS.length){
+      const q=QUESTS[g.quests.idx];
+      if(!q.done(g)) break;
+      g.quests.done.push(q.id);
+      if(q.reward) for(const r in q.reward) g.res[r]=(g.res[r]||0)+q.reward[r];
+      g.quests.idx++; completed.push(q);
+    }
+    return completed;
+  }
+
+  // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
+  function endTurn(g){
+    if(g.over)return{enemyBattle:null};
+    const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
+    g.starving = g.res.식량<0; if(g.starving) g.res.식량=0;   // 식량 고갈 → 이번 턴 생산 중단
+    let made=g.starving?0:buildRate(g); while(made>0&&g.castle.queue.length){const u=g.castle.queue.shift();g.castle.garrison[u]=(g.castle.garrison[u]||0)+1;made--;}
+    if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
+    let built=null;
+    if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){built=g.castle.build.label;completeBuild(g,g.castle.build);g.castle.build=null;}}   // 건설 진행
+    let heal=(g.castle.econ["병원"]||0)*3;
+    for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
+    aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
+    const enemyBattle=moveTick(g);   // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투
+    raidTick(g);
+    g.turn++; tavernTick(g); processRespawns(g); checkVictory(g);
+    const questsCompleted=questTick(g);
+    return {enemyBattle, built, questsCompleted};
+  }
+
+  API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
+    TIER_MAX,TIER_NAME,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
+    GRADE_BUFF,GRADE_GATHER,HERO_NAMES,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
+    ARMY_SLOTS_BASE,ARMY_SLOTS_MAX,pArmyCount,armySlots,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
+    MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
+    dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
+    compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
+    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,
+    produce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
+    buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
+    playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
+  global.Game=API;
+})(typeof self!=="undefined"?self:this);
+
+/* ===== 타일 그리드 맵 생성 → game.js 에 주입 (로직 재사용) ===== */
+const GW=14, GH=9, TS=54, PAD=10;
+function buildTileMap(){
+  const NODES={}, EDGES=[], COORD={}, grid=[];
+  // 성(P/E)·고대성 + 양 진영 대칭 자원 클러스터(성 근처 4자원씩). 몬스터는 랜덤 스폰(고정 둥지 없음).
+  const specials=[
+    {x:1,y:4,id:"P",def:{name:"아군 성",type:"castle",owner:"P"}},
+    {x:GW-2,y:4,id:"E",def:{name:"적 성",type:"castle",owner:"E"}},
+    {x:Math.floor(GW/2),y:7,id:"ANCIENT",def:{name:"고대성",type:"ancient",owner:null}},
+  ];
+  // 성 기준 자원 오프셋(거울 대칭). E는 x를 반전.
+  const resOff=[{dx:2,dy:-2,res:"식량",nm:"곡창"},{dx:2,dy:2,res:"목재",nm:"삼림"},{dx:3,dy:-1,res:"석재",nm:"채석장"},{dx:3,dy:1,res:"철",nm:"철광"}];
+  resOff.forEach((o,i)=>{
+    specials.push({x:1+o.dx,y:4+o.dy,id:"PR"+i,def:{name:o.nm,type:"resource",res:o.res}});
+    specials.push({x:(GW-2)-o.dx,y:4+o.dy,id:"ER"+i,def:{name:"동부 "+o.nm,type:"resource",res:o.res}});
+  });
+  const at={}; for(const s of specials) at[s.x+","+s.y]=s;
+  for(let y=0;y<GH;y++){grid[y]=[];for(let x=0;x<GW;x++){
+    const s=at[x+","+y]; const id=s?s.id:("t"+x+"_"+y);
+    NODES[id]=s?{...s.def}:{name:"",type:"plain"}; COORD[id]=[x,y]; grid[y][x]=id;
+  }}
+  for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){
+    if(x<GW-1)EDGES.push([grid[y][x],grid[y][x+1],1]);
+    if(y<GH-1)EDGES.push([grid[y][x],grid[y+1][x],1]);
+  }
+  const spawn={ count:5,
+    raid:{name:"고대 생물",mtier:"레이드",comp:{오우거:6,오크:12,하피:8},reward:{철:70,석재:50,식량:50}},
+    pool:[
+      {name:"늑대 무리",mtier:"사냥",comp:{늑대:12},reward:{식량:25,목재:20}},
+      {name:"도적 무리",mtier:"사냥",comp:{고블린:8,늑대:4},reward:{식량:20,철:12}},
+      {name:"고블린 무리",mtier:"토벌",comp:{오크:6,하피:6,오우거:2},reward:{철:40,석재:30,식량:30}},
+      {name:"오크 무리",mtier:"토벌",comp:{오크:10,오우거:3,하피:5},reward:{철:35,목재:30,석재:25}},
+    ] };
+  return {map:{NODES,EDGES,spawn}, COORD};
+}
+const TILE=buildTileMap();
+Game.setMap(TILE.map);
+const COORDS={}; for(const id in TILE.COORD){const[gx,gy]=TILE.COORD[id];COORDS[id]=[PAD+gx*TS+TS/2, PAD+gy*TS+TS/2];}
+/* ===== game.js 바인딩 (단일 소스, 타일맵 주입 후) ===== */
+const {NODES,EDGES,ADJ,RES,UNIT_COST,ECON_BUILDINGS,ECON_CAP,BUILDINGS,RESEARCH,GROUPS,STATNAME,ARMY_CAP,CASTLE_UP_COST,UNIV_COST,dijkstra,pathTo,troops,
+  TIER_MAX,TIER_NAME,unitLabel,baseOf,tierOf,costOf,maxTierFor,heroEffect,UNIT_BLD}=Game;
+const state=Game.newGame();
+state.selected=null; state.pendingMove=null; state.mode="normal"; state.castleTab="건물"; state.prodTier={}; // UI 전용 필드
+const A=id=>state.armies.find(a=>a.id===id);
+const armiesAt=n=>state.armies.filter(a=>a.node===n);
+const heroById=id=>state.heroes.find(h=>h.id===id);
+const income=()=>Game.income(state);
+const buildRate=()=>Game.buildRate(state);
+const hasR=k=>Game.hasR(state,k);
+const gatherOf=a=>Game.gatherOf(state,a);
+const canAfford=c=>Game.canAfford(state,c);
+
+/* ===== 렌더 ===== */
+const svg=document.getElementById('map'), SVGNS="http://www.w3.org/2000/svg";
+const el=(t,a)=>{const e=document.createElementNS(SVGNS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const nodeColor=n=>n.type==="castle"?"#f59e0b":n.type==="resource"?"#22c55e":n.type==="den"?"#7f1d1d":n.type==="ancient"?"#6d28d9":"#475569";
+
+const tileFill=n=>n.type==="castle"?"#3b2408":n.type==="resource"?"#0f2e1a":n.type==="den"?"#2a0e0e":n.type==="ancient"?"#241247":"#131a26";
+function renderMap(){
+  svg.innerHTML="";
+  let reach={};
+  if(state.selected?.kind==="army"){const a=A(state.selected.id);if(a?.side==="P")reach=dijkstra(a.node,99).dist;}
+  const selNode=A(state.selected?.id)?.node;
+  const onPath={}; if(state.pendingMove) for(const t of state.pendingMove.path) onPath[t]=1;
+  // ---- 타일 ----
+  for(const id in NODES){
+    const n=NODES[id],[x,y]=COORDS[id],px=x-TS/2,py=y-TS/2;
+    const reachable = reach[id]!==undefined && id!==selNode;
+    let stroke="#0b1220", sw=1;
+    if(onPath[id]){stroke="#f59e0b";sw=2.5;} else if(reachable){stroke="#fbbf24";sw=1.5;}
+    svg.appendChild(el("rect",{x:px+1.5,y:py+1.5,width:TS-3,height:TS-3,rx:6,fill:tileFill(n),stroke,"stroke-width":sw,
+      class:"node-hit","data-node":id,...(reachable?{"data-go":id}:{}),style:"cursor:pointer"}));
+    if(n.type==="castle")svg.appendChild(el("rect",{x:px+3,y:py+3,width:TS-6,height:TS-6,rx:5,fill:"none",stroke:n.owner==="P"?"#3b82f6":"#ef4444","stroke-width":2.5,"pointer-events":"none"}));
+    if(n.type==="ancient")svg.appendChild(el("rect",{x:px+3,y:py+3,width:TS-6,height:TS-6,rx:5,fill:"none",stroke:n.owner==="P"?"#3b82f6":n.owner==="E"?"#ef4444":"#c4b5fd","stroke-width":2.5,"stroke-dasharray":n.owner?"none":"4 3","pointer-events":"none"}));
+    if(n.type!=="plain"){
+      const ic=el("text",{x,y:y-2,"text-anchor":"middle","font-size":18,"pointer-events":"none"});
+      ic.textContent=n.type==="castle"?"🏰":n.type==="ancient"?"🏛":n.type==="resource"?"◆":"☠"; svg.appendChild(ic);
+      const lb=el("text",{x,y:y+16,"text-anchor":"middle","font-size":8.5,fill:"#94a3b8","pointer-events":"none"});
+      lb.textContent=n.res?n.res:(n.name.length>5?n.name.slice(0,4):n.name); svg.appendChild(lb);
+    }
+    // 레이드 수성 진행
+    if(n.type==="ancient" && state.raid.holder && state.raid.holdTurns>0){
+      const rb=el("text",{x,y:py-2,"text-anchor":"middle","font-size":10,"font-weight":"800","pointer-events":"none",fill:state.raid.holder==="P"?"#93c5fd":"#fca5a5"});
+      rb.textContent=`🛡${state.raid.holdTurns}/${state.raid.need}`; svg.appendChild(rb);
+    }
+    // 둥지 재생성 카운트다운
+    if(n.type==="den" && !armiesAt(id).some(a=>a.side==="M")){
+      const rs=(state.respawns||[]).find(r=>r.node===id);
+      if(rs){const t=el("text",{x,y:py-2,"text-anchor":"middle","font-size":9,"pointer-events":"none",fill:"#c4b5fd"});t.textContent=`⏳${Math.max(0,rs.at-state.turn)}`;svg.appendChild(t);}
+    }
+    // 채집 표시
+    const g=armiesAt(id).map(gatherOf).filter(Boolean).reduce((s,g)=>s+g.amt,0);
+    if(g>0){const t=el("text",{x,y:py-2,"text-anchor":"middle","font-size":10,fill:"#4ade80","font-weight":"700","pointer-events":"none"});t.textContent=`⛏+${g}`;svg.appendChild(t);}
+  }
+  for(const a of state.armies){
+    let [x,y]=COORDS[a.node]; const others=armiesAt(a.node);
+    if(a.dest&&a.path){const _i=a.path.indexOf(a.node),_nx=a.path[_i+1];   // 타일 사이 위치 보간(진행도)
+      if(_nx&&COORDS[_nx]){const _p=Math.max(0,Math.min(1,a.moveProg||0));x+=(COORDS[_nx][0]-x)*_p;y+=(COORDS[_nx][1]-y)*_p;}}
+    const idx=others.indexOf(a), off=others.length>1?(idx-(others.length-1)/2)*26:0;
+    const ax=x+off,ay=y-2;
+    const sel = state.selected?.kind==="army"&&state.selected.id===a.id;
+    const col = a.side==="P"?"#3b82f6":a.side==="M"?"#7c3aed":"#ef4444";
+    const glow= a.side==="P"?"#93c5fd":a.side==="M"?"#c4b5fd":"#fca5a5";
+    if(sel){ // 선택 강조: 헤일로 + 굵은 금색 링
+      svg.appendChild(el("circle",{cx:ax,cy:ay,r:23,fill:col,opacity:0.20}));
+      svg.appendChild(el("circle",{cx:ax,cy:ay,r:18,fill:"none",stroke:"#fbbf24","stroke-width":3.5}));
+    } else if(a.side!=="P"){ // 적·몬스터: 외곽 링으로 잘 보이게
+      svg.appendChild(el("circle",{cx:ax,cy:ay,r:16,fill:"none",stroke:glow,"stroke-width":2,opacity:0.55}));
+    }
+    const grp=el("g",{class:"army","data-army":a.id});
+    if(a.side!=="P") grp.setAttribute("pointer-events","none"); // 적 토큰 클릭 통과 → 노드가 대상
+    grp.appendChild(el("circle",{cx:ax,cy:ay,r:13,fill:col,stroke:"#0b1220","stroke-width":2.5}));
+    const t=el("text",{x:ax,y:ay+4.5,"text-anchor":"middle","font-size":12,fill:"#fff","font-weight":"800","pointer-events":"none"});
+    t.textContent=a.side==="P"?"⚔":a.side==="M"?"☠":"✕";grp.appendChild(t);
+    svg.appendChild(grp);
+    // 병력 수 배지 (우하단)
+    const cnt=troops(a), bw=cnt>=10?21:16;
+    svg.appendChild(el("rect",{x:ax+5,y:ay+4,width:bw,height:14,rx:7,fill:"#0b1220",stroke:col,"stroke-width":1.5,"pointer-events":"none"}));
+    const ct=el("text",{x:ax+5+bw/2,y:ay+14,"text-anchor":"middle","font-size":10,fill:"#fff","font-weight":"700","pointer-events":"none"}); ct.textContent=cnt; svg.appendChild(ct);
+    if(a.hero){const h=el("text",{x:ax-13,y:ay-7,"font-size":13,"pointer-events":"none",fill:"#fbbf24"});h.textContent="★";svg.appendChild(h);}
+    // 선택 부대 이름 라벨 (위)
+    if(sel){ const nm=a.name, w=nm.length*12+16;
+      svg.appendChild(el("rect",{x:ax-w/2,y:ay-40,width:w,height:19,rx:9,fill:"#fbbf24","pointer-events":"none"}));
+      const nt=el("text",{x:ax,y:ay-26,"text-anchor":"middle","font-size":11,fill:"#1a1200","font-weight":"800","pointer-events":"none"});nt.textContent=nm;svg.appendChild(nt);
+    }
+  }
+  if(state.pendingMove){ // 노드 옆 확정/취소 팝업 (최상단)
+    const pm=state.pendingMove, tx=COORDS[pm.target][0], ty=COORDS[pm.target][1];
+    const okg=el("g",{"data-confirm":"1",style:"cursor:pointer"});
+    okg.appendChild(el("rect",{x:tx-54,y:ty-56,width:66,height:26,rx:8,fill:"#111827",stroke:pm.attack?"#ef4444":"#f59e0b","stroke-width":2}));
+    const okl=el("text",{x:tx-21,y:ty-39,"text-anchor":"middle","font-size":12,fill:pm.attack?"#f87171":"#fbbf24","font-weight":"700","pointer-events":"none"});
+    okl.textContent=pm.attack?"⚔️ 공격":"✓ 이동"; okg.appendChild(okl); svg.appendChild(okg);
+    const nog=el("g",{"data-cancel":"1",style:"cursor:pointer"});
+    nog.appendChild(el("rect",{x:tx+15,y:ty-56,width:34,height:26,rx:8,fill:"#111827",stroke:"#475569","stroke-width":2}));
+    const nol=el("text",{x:tx+32,y:ty-39,"text-anchor":"middle","font-size":13,fill:"#94a3b8","pointer-events":"none"}); nol.textContent="✕"; nog.appendChild(nol); svg.appendChild(nog);
+  }
+  attach();
+}
+/* ==== ui.js 인라인 (build.js 생성, 직접 수정 금지) ==== */
+/* =====================================================================
+   mini4x 공유 UI — 자원바·성 내정 패널·이동/전투·저장/불러오기·턴 처리
+   - 노드판(app_economy)·타일판(app_tilemap)이 이 하나를 공유(단일 UI 소스).
+   - 맵별로 다른 부분(COORDS·renderMap)은 각 템플릿 head 에 있음.
+   - build.js 가 //__UI__ 자리에 인라인.
+   ===================================================================== */
+function renderResBar(){
+  const inc=income();
+  document.getElementById('resbar').innerHTML=RES.map(r=>{
+    const v=inc[r];
+    return `<span class="res">${r} <b>${state.res[r]}</b> <span class="inc" style="${v<0?'color:#fca5a5':''}">${v>=0?'+':''}${v}</span></span>`;
+  }).join("")
+    +`<span class="res" style="border-color:#c4b5fd;color:#c4b5fd">🏵 토벌 <b>${state.subdue||0}</b></span>`
+    +`<span class="res" style="border-color:#fbbf24;color:#fbbf24">📜 경험치 <b>${state.xpItems||0}</b></span>`;
+  document.getElementById('turn').textContent=state.turn;
+}
+// 🎯 온보딩 퀘스트 — 현재 목표를 패널 최상단에 상시 표시(선택 상태 무관). 데이터는 Game.QUESTS.
+function renderQuests(){
+  const Q=Game.QUESTS, q=state.quests||{idx:0};
+  if(!Q||q.idx>=Q.length) return "";   // 전부 완료 → 숨김
+  const cur=Q[q.idx];
+  const rw=cur.reward?Object.entries(cur.reward).map(([r,v])=>`${r[0]}+${v}`).join(" "):"";
+  return `<div style="background:var(--bg);border:1px solid var(--gold);border-radius:10px;padding:8px 10px;margin-bottom:10px">
+    <div style="font-size:11px;color:var(--gold)">🎯 목표 <b>${q.idx+1} / ${Q.length}</b></div>
+    <div style="font-weight:700;margin:2px 0">${cur.name}</div>
+    <div class="k" style="font-size:12px">${cur.desc}</div>
+    ${rw?`<div style="font-size:11px;color:var(--green);margin-top:3px">✦ 보상 ${rw}</div>`:""}
+  </div>`;
+}
+function renderPanel(){
+  const p=document.getElementById('panel'); const s=state.selected;
+  let h=renderQuests();
+  if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
+    const c=state.castle, br=buildRate();
+    const tab=state.castleTab||"건물"; const busy=!!c.build;
+    h+=`<h3>🏰 성 내정 <span class="k">Lv.${c.level}</span></h3>`;
+    const upkeep=Game.foodUpkeep(state), tt=Game.totalTroops(state);
+    h+=`<div class="k">생산 ${br}/턴${br>1?' <span style="color:var(--gold)">(내정영웅)</span>':''} · 부대 ${Game.pArmyCount(state)}/${Game.armySlots(state)} · 병력 ${tt}${c.wall?` · 🧱${c.wall}`:""}</div>`;
+    if(upkeep>0) h+=`<div class="k" style="font-size:11px${state.starving?';color:#fca5a5':''}">🍞 식량 유지비 ${upkeep}/턴${state.starving?" · ⚠ 고갈! 생산 중단 — 농장 증설/병력 감축":""}</div>`;
+    h+=`<div class="queue" style="font-size:11px">대기열(${c.queue.length}): ${c.queue.length?c.queue.map(unitLabel).join(", "):"—"}</div>`;
+    {const wnd=state.castle.wounded, wTot=Object.values(wnd).reduce((x,y)=>x+y,0);
+     if(wTot>0) h+=`<div style="color:#fca5a5;font-size:12px">🩹 부상자 ${wTot} <span class="k">(병원 ${(state.castle.econ["병원"]||0)*3}/턴 치료)</span></div>`;}
+    // 탭 바
+    h+=`<div style="display:flex;gap:4px;margin:7px 0">`;
+    for(const t of ["건물","연구","선술집","출전"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
+    h+=`</div>`;
+    if(tab==="건물"){
+    if(busy){const pct=Math.round(100*(c.build.total-c.build.left)/c.build.total);
+      h+=`<div style="background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:6px 8px;margin-bottom:8px;font-size:12px">
+        🏗 건설 중: <b style="color:var(--gold)">${c.build.label}</b> — ${c.build.left}턴 남음
+        <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div></div>`;}
+    h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur("castle")}턴</span></span>
+      <span class="cost">목${CASTLE_UP_COST.목재} 석${CASTLE_UP_COST.석재} 철${CASTLE_UP_COST.철}</span>
+      <button class="minibtn" id="levelup" ${canAfford(CASTLE_UP_COST)&&!busy?"":"disabled"}>▲</button></div>
+      <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`;
+    { const wl=c.wall||0, wc=Game.wallCost(wl);
+      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl} · 수성 +${Math.min(30,wl*5)}% · ${Game.buildDur("wall")}턴</span></span>
+        <span class="cost">${Object.entries(wc).map(([r,v])=>r[0]+v).join(" ")}</span>
+        <button class="minibtn" data-wall="1" ${wl<6&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
+    h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(클릭해 열기 · 레벨 = 최대 티어)</span></div>`;
+    for(const key in BUILDINGS){const b=BUILDINGS[key];
+      if(c.buildings.includes(key)){
+        const open=c.openBuilding===key, lv=c.blevel[key]||1;
+        h+=`<div class="prodrow"><button class="minibtn" data-bld="${key}" style="${open?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${b.icon} ${key} <span class="k">Lv.${lv} · T${lv}</span></button>`;
+        if(lv<TIER_MAX){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
+          h+=`<span class="cost">${cs}·${Game.buildDur("bld")}T</span><button class="minibtn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
+        } else h+=`<span class="k" style="font-size:11px">최대 T${TIER_MAX}</span>`;
+        h+=`</div>`;
+      } else {
+        const cs=Object.entries(b.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
+        h+=`<div class="prodrow"><span class="nm">${b.icon} ${key} <span class="k">미건설</span></span>
+          <span class="cost">${cs}·${Game.buildDur("construct")}T</span>
+          <button class="minibtn" data-construct="${key}" ${canAfford(b.cost)&&!busy?"":"disabled"}>건설</button></div>`;
+      }
+    }
+    const ob=c.openBuilding;
+    if(ob && c.buildings.includes(ob)){
+      const lv=c.blevel[ob]||1;
+      h+=`<hr><div class="k" style="margin-bottom:4px">${BUILDINGS[ob].icon} ${ob} — 병종·티어·수량 <span class="k">(최대 T${lv})</span></div>`;
+      for(const u of BUILDINGS[ob].units){
+        const selT=Math.min(lv,state.prodTier[u]||1);
+        let topts="";
+        for(let t=1;t<=lv;t++){const cc=costOf(u,t);const cs=Object.entries(cc).map(([r,v])=>`${r[0]}${v}`).join("");topts+=`<option value="${t}" ${t===selT?"selected":""}>T${t} ${TIER_NAME[t]} (${cs})</option>`;}
+        h+=`<div class="prodrow"><span class="nm">${u}</span>
+          <select id="tier_${u}" style="background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:11px">${topts}</select>
+          <input type="number" id="qty_${u}" value="1" min="1" style="width:40px;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:12px;text-align:center">
+          <button class="minibtn" data-make="${u}">생산</button></div>`;
+      }
+    }
+    // 🏗 자원 건물 — 레벨업(출력↑, 시간 소요). 병원은 레벨×3 치료
+    h+=`<hr><div class="k" style="margin-bottom:4px">🏗 자원 건물 <span class="k">(레벨업 = 출력↑)</span></div>`;
+    for(const k in ECON_BUILDINGS){ const b=ECON_BUILDINGS[k], lv=state.castle.econ[k]||0;
+      const mult=(b.res&&hasR("영농"))?1.5:1;
+      const cur = lv>0 ? (b.res?`+${Math.round(b.amt*lv*mult)} ${b.res}/턴`:`치료 +${lv*3}/턴`) : "미건설";
+      if(lv>=Game.ECON_MAX){ h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} 최대 · ${cur}</span></span></div>`; continue; }
+      const cost=Game.econCost(k,lv); const cs=Object.entries(cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
+      h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} · ${cur} · ${Game.buildDur("econ",lv)}T</span></span>
+        <span class="cost">${cs}</span>
+        <button class="minibtn" data-econ="${k}" ${canAfford(cost)&&!busy?"":"disabled"}>${lv?"▲":"건설"}</button></div>`;
+    }
+    } // ← 건물 탭 끝
+    if(tab==="연구"){
+    // 🎓 대학 / 연구
+    if(!state.castle.buildings.includes("대학")){
+      const cs=Object.entries(UNIV_COST).map(([r,v])=>`${r[0]}${v}`).join(" ");
+      h+=`<hr><div class="prodrow"><span class="nm">🎓 대학 <span class="k">연구 해금</span></span>
+        <span class="cost">${cs}</span><button class="minibtn" data-univ="1" ${canAfford(UNIV_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur("univ")}T</button></div>`;
+    } else {
+      h+=`<hr><div class="k" style="margin-bottom:4px">🎓 대학 — 연구 <span class="k">(전투와 병행)</span></div>`;
+      h+=`<div style="display:flex;gap:5px;margin-bottom:6px">`;
+      for(const cat of ["전투","내정"]) h+=`<button class="minibtn" data-rtab="${cat}" style="${state.research.tab===cat?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${cat}</button>`;
+      h+=`</div>`;
+      const act=state.research.active;
+      if(act) h+=`<div style="color:var(--gold);font-size:12px;margin-bottom:4px">🔬 진행 중: ${act.key} — ${act.left}턴</div>`;
+      const subs = state.research.tab==="전투" ? ["공성·수성","보병","궁병","기병"] : ["경제"];
+      for(const sub of subs){
+        h+=`<div style="font-size:11px;margin:7px 0 2px;color:#cbd5e1">▸ ${sub}</div>`;
+        for(const rk in RESEARCH){ const r=RESEARCH[rk]; if(r.cat!==state.research.tab||r.sub!==sub) continue;
+          const pre=(r.req&&r.req.length)?"└ ":"";
+          if(state.research.done[rk]){ h+=`<div class="prodrow"><span class="nm">${pre}✅ ${rk} <span class="k">${r.desc}</span></span></div>`; continue; }
+          const reqOk=(r.req||[]).every(q=>state.research.done[q]);
+          const cs=Object.entries(r.cost).map(([res,v])=>`${res[0]}${v}`).join(" ");
+          if(!reqOk){ h+=`<div class="prodrow"><span class="nm" style="opacity:.5">${pre}🔒 ${rk} <span class="k">선행: ${r.req.join(", ")}</span></span></div>`; continue; }
+          h+=`<div class="prodrow"><span class="nm">${pre}${rk} <span class="k">${r.desc}</span></span>
+            <span class="cost">${cs}·${r.turns}T</span>
+            <button class="minibtn" data-research="${rk}" ${(!act&&canAfford(r.cost))?"":"disabled"}>연구</button></div>`;
+        }
+      }
+    }
+    } // ← 연구 탭 끝
+    if(tab==="선술집"){
+    // 🍺 선술집 — 랜덤 영웅 영입 (★3은 토벌 점수)
+    if(!state.tavern.built){
+      const cs=Object.entries(Game.TAVERN_COST).map(([r,v])=>`${r[0]}${v}`).join(" ");
+      h+=`<hr><div class="prodrow"><span class="nm">🍺 선술집 <span class="k">영웅 영입 해금</span></span>
+        <span class="cost">${cs}</span><button class="minibtn" data-tavern="1" ${canAfford(Game.TAVERN_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur("tavern")}T</button></div>`;
+    } else {
+      const star=g=>"★".repeat(g);
+      h+=`<hr><div class="k" style="margin-bottom:4px">🍺 선술집 — 영입 후보 <span class="k">(${state.tavern.pool.length}명 · ${Game.TAVERN_GAP||3}턴마다 등장)</span></div>`;
+      if(state.tavern.pool.length===0) h+=`<div class="k" style="font-size:12px">대기 중 — 곧 새 후보가 등장합니다.</div>`;
+      for(const c of state.tavern.pool){ const cost=Game.RECRUIT_COST[c.grade]; const cs=Object.entries(cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
+        h+=`<div class="prodrow" style="align-items:flex-start"><span class="nm">${star(c.grade)} ${c.name} <span class="k">(${c.type})</span>
+            <br><span style="font-size:10px;color:var(--gold)">✦ ${heroEffect(c)}</span></span>
+          <span class="cost">${cs}</span><button class="minibtn" data-recruit="${c.id}" ${canAfford(cost)?"":"disabled"}>영입</button></div>`;
+      }
+      const sp=Game.SPECIAL_COST, spRes={식량:sp.식량,철:sp.철}, spOk=(state.subdue||0)>=sp.토벌&&canAfford(spRes);
+      h+=`<div class="prodrow" style="align-items:flex-start"><span class="nm">★★★ 특별 영입 <span class="k">(랜덤 계열)</span>
+          <br><span style="font-size:10px;color:var(--gold)">✦ 전투 +28% / 내정 생산+2·채집×1.7</span></span>
+        <span class="cost">🏵${sp.토벌} 식${sp.식량} 철${sp.철}</span><button class="minibtn" data-special="1" ${spOk?"":"disabled"}>영입</button></div>`;
+    }
+    } // ← 선술집 탭 끝
+    if(tab==="출전"){
+    h+=`<div class="k" style="font-size:11px;margin-bottom:4px">🛡 주둔군은 적의 성 공격 시 자동 수성 참전</div>`;
+    h+=composerHTML();
+    { const dt=Object.values(state.castle.draft).reduce((x,y)=>x+y,0);
+      h+=`<div style="display:flex;gap:6px;margin-top:6px">
+        <button class="minibtn" id="deploy" style="border-color:var(--gold);color:var(--gold)" ${dt>0&&Game.canAddArmy(state)?"":"disabled"}>🚩 성에 출전</button>
+        <button class="minibtn" id="draftClear" ${dt>0?"":"disabled"}>초기화</button></div>`; }
+    } // ← 출전 탭 끝
+  } else if(s?.kind==="army"){
+    const a=A(s.id);
+    h+=`<h3>${a.side==="P"?"⚔ ":"✕ "}${a.name}</h3>`;
+    h+=`<div class="k">위치 ${NODES[a.node].name} · 속도 ${Game.armyTicksPerTile(a)}틱/타일 · 병력 ${troops(a)}${a.dest?` · 🚩 <span style="color:var(--gold)">${NODES[a.dest].name} 이동 중</span>`:""}</div>`;
+    h+=`<div class="k" style="font-size:12px">편성: ${Object.entries(a.comp).map(([k,v])=>`${unitLabel(k)} ${v}`).join(", ")||"—"}</div>`;
+    const g=gatherOf(a); if(g)h+=`<div style="color:var(--green)">⛏ 채집 중: ${g.res} +${g.amt}/턴</div>`;
+    if(a.hero){const hero=heroById(a.hero);
+      h+=`<div class="loc" style="color:var(--gold)">${"★".repeat(hero.grade)} ${hero.name} (${hero.type}) 참전 중 <span class="k">— ${heroEffect(hero)}</span></div>`;
+    } else h+=`<div class="k">영웅 없음</div>`;
+    if(a.side==="P"){
+      h+=`<div style="font-size:12px;margin-top:6px;color:var(--gold)">▶ 이동/공격할 노드를 클릭 → 노드 옆 확정 버튼을 누르세요</div>`;
+      if(a.node==="P") h+=`<div style="margin-top:6px"><button class="minibtn" id="disbandBtn">성에 귀환</button></div>`;
+    }
+  } else if(s?.kind==="node"){
+    const n=NODES[s.id], occ=armiesAt(s.id);
+    h+=`<h3>${({castle:"🏰",ancient:"🏛",resource:"◆",den:"☠",plain:"·"})[n.type]||""} ${n.name}</h3>`;
+    h+=`<div class="k">유형: ${({castle:"성",ancient:"고대성(중앙 레이드)",resource:"자원지",den:"몬스터 둥지",plain:"평지"})[n.type]}${n.res?` · 자원 ${n.res}`:""}</div>`;
+    const mon=occ.find(a=>a.side==="M");
+    if(n.type==="ancient"){ const R=state.raid;
+      const ownTxt=n.owner==="P"?'<span style="color:var(--blue)">아군 점령</span>':n.owner==="E"?'<span style="color:var(--red)">적 점령</span>':"미점령";
+      h+=`<div style="margin-top:5px;font-size:12px">🏛 고대성 — 승리 조건: 고대 생물 처치 → 점령 → <b>${R.need}턴 수성</b></div>`;
+      h+=`<div class="k" style="font-size:11px">고대성 점령 중엔 방어 +20%. 비우면 수성 진행 리셋.</div>`;
+      if(R.cleared) h+=`<div style="margin-top:4px;font-size:12px">현황: ${ownTxt} · 수성 ${R.holder?R.holdTurns:0}/${R.need}턴</div>`;
+    }
+    if(mon){ h+=`<div style="color:#c4b5fd;margin-top:5px">☠ ${mon.name} <b>[${mon.mtier}]</b></div>
+      <div class="k" style="font-size:12px">구성: ${Object.entries(mon.comp).map(([k,v])=>unitLabel(k)+" "+v).join(", ")}</div>
+      <div class="k" style="font-size:12px">처치 보상: ${Object.entries(mon.reward).map(([k,v])=>k+" "+v).join(", ")}</div>
+      <div style="font-size:12px;margin-top:4px;color:var(--gold)">▶ ${mon.mtier==="레이드"?"대군+영웅을 갖춰 도전하세요":"부대로 공격해 소탕하세요"}</div>`;
+    } else { h+=`<div class="k" style="font-size:12px;margin-top:4px">주둔: ${occ.map(a=>a.name).join(", ")||"없음"}</div>`; }
+    // 여기로 바로 출전
+    if(Object.values(state.castle.garrison).reduce((x,y)=>x+y,0)>0 || Object.values(state.castle.draft).reduce((x,y)=>x+y,0)>0){
+      h+=`<hr>`+composerHTML();
+      const dt=Object.values(state.castle.draft).reduce((x,y)=>x+y,0), atk=occ.some(x=>x.side!=="P");
+      h+=`<div style="margin-top:6px;display:flex;gap:6px">
+        <button class="minibtn" id="deployTo" data-target="${s.id}" style="border-color:${atk?'var(--red)':'var(--gold)'};color:${atk?'#fca5a5':'var(--gold)'}" ${dt>0&&Game.canAddArmy(state)?"":"disabled"}>🚩 여기로 출전${atk?" ⚔️":""}</button>
+        <button class="minibtn" id="draftClear2" ${dt>0?"":"disabled"}>초기화</button></div>`;
+    }
+  } else {
+    h+=`<h3>📋 안내</h3><div class="k">🏰 <b>성을 눌러</b> 병력을 생산·출전시키세요.<br>부대(⚔)를 누른 뒤 갈 노드를 클릭 → 확정.<br>☠ 둥지를 공격해 사냥·토벌하면 보상·경험치·토벌 점수를 얻습니다.</div>`;
+  }
+  // 영웅 관리
+  h+=`<hr><h3>🦸 영웅 <span class="k">· 경험치 아이템 ${state.xpItems||0}</span></h3>`;
+  h+=`<div class="k" style="font-size:11px;margin-bottom:4px">몬스터 처치로 경험치 획득 → 영웅 승급(★↑)</div>`;
+  for(const hero of state.heroes){
+    const locTxt = hero.loc==="idle"?"대기": hero.loc==="castle"?"성 배치": (A(hero.loc)?.name||"?")+" 배치";
+    h+=`<div class="hero"><b><span style="color:var(--gold)">${"★".repeat(hero.grade)}</span> ${hero.name}</b> <span class="k">(${hero.type})</span>
+      <div class="loc">${locTxt}</div>
+      <div class="k" style="font-size:11px;color:var(--gold)">✦ ${heroEffect(hero)}</div>
+      <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
+    if(hero.type==="내정") h+=`<button class="minibtn" data-hcastle="${hero.id}">성에 배치</button>`;
+    if(s?.kind==="army"&&A(s.id).side==="P") h+=`<button class="minibtn" data-harmy="${hero.id}">선택 부대에</button>`;
+    h+=`<button class="minibtn" data-hidle="${hero.id}">해제</button>`;
+    if(hero.grade<3){const pc=Game.PROMOTE_COST[hero.grade];
+      h+=`<button class="minibtn" data-promote="${hero.id}" style="border-color:var(--gold);color:var(--gold)" ${(state.xpItems||0)>=pc?"":"disabled"}>승급 ★${hero.grade+1} (경험치 ${pc})</button>`;}
+    h+=`</div></div>`;
+  }
+  p.innerHTML=h;
+  // 핸들러
+  p.querySelectorAll('[data-bld]').forEach(b=>b.onclick=()=>{state.castle.openBuilding=b.dataset.bld;render();});
+  p.querySelectorAll('[data-construct]').forEach(b=>b.onclick=()=>construct(b.dataset.construct));
+  p.querySelectorAll('select[id^="tier_"]').forEach(s=>s.onchange=()=>{state.prodTier[s.id.slice(5)]=+s.value;});
+  p.querySelectorAll('[data-make]').forEach(b=>b.onclick=()=>{const u=b.dataset.make;const t=+document.getElementById('tier_'+u).value;state.prodTier[u]=t;produce(u,+document.getElementById('qty_'+u).value,t);});
+  p.querySelectorAll('[data-bup]').forEach(b=>b.onclick=()=>upgradeBuilding(b.dataset.bup));
+  p.querySelectorAll('[data-ctab]').forEach(b=>b.onclick=()=>{state.castleTab=b.dataset.ctab;render();});
+  const wl=p.querySelector('[data-wall]'); if(wl) wl.onclick=fortifyWall;
+  p.querySelectorAll('[data-promote]').forEach(b=>b.onclick=()=>promoteHero(b.dataset.promote));
+  const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
+  p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
+  p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
+  p.querySelectorAll('[data-hidle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hidle,"idle"));
+  p.querySelectorAll('[data-draft]').forEach(b=>b.onclick=()=>draftAdjust(b.dataset.draft,+b.dataset.d));
+  const dep=p.querySelector('#deploy'); if(dep) dep.onclick=deploy;
+  const dcl=p.querySelector('#draftClear'); if(dcl) dcl.onclick=()=>{state.castle.draft={};render();};
+  const dpt=p.querySelector('#deployTo'); if(dpt) dpt.onclick=()=>deployTo(dpt.dataset.target);
+  const dc2=p.querySelector('#draftClear2'); if(dc2) dc2.onclick=()=>{state.castle.draft={};render();};
+  const dsb=p.querySelector('#disbandBtn'); if(dsb) dsb.onclick=()=>disband(state.selected.id);
+  p.querySelectorAll('[data-econ]').forEach(b=>b.onclick=()=>buildEcon(b.dataset.econ));
+  const uv=p.querySelector('[data-univ]'); if(uv) uv.onclick=buildUniversity;
+  const tv=p.querySelector('[data-tavern]'); if(tv) tv.onclick=buildTavern;
+  p.querySelectorAll('[data-recruit]').forEach(b=>b.onclick=()=>recruitHero(b.dataset.recruit));
+  const sp=p.querySelector('[data-special]'); if(sp) sp.onclick=specialRecruit;
+  p.querySelectorAll('[data-research]').forEach(b=>b.onclick=()=>startResearch(b.dataset.research));
+  p.querySelectorAll('[data-rtab]').forEach(b=>b.onclick=()=>{state.research.tab=b.dataset.rtab;render();});
+}
+function render(){renderMap();renderResBar();renderPanel();renderMoveConfirm();}
+
+function attach(){
+  svg.querySelectorAll('[data-confirm]').forEach(g=>g.onclick=e=>{e.stopPropagation();confirmMove();});
+  svg.querySelectorAll('[data-cancel]').forEach(g=>g.onclick=e=>{e.stopPropagation();cancelMove();});
+  svg.querySelectorAll('[data-army]').forEach(g=>g.onclick=e=>{e.stopPropagation();
+    const a=A(g.dataset.army), sel=state.selected?.kind==="army"?A(state.selected.id):null;
+    // 아군 부대 선택 중 다른 노드 클릭(아군 토큰 포함) → 그 노드로 이동 예약
+    if(sel && sel.side==="P" && a.node!==sel.node){
+      const {dist}=dijkstra(sel.node,99);
+      if(dist[a.node]!==undefined){ stageMove(a.node); return; }
+    }
+    state.pendingMove=null; state.selected={kind:"army",id:a.id}; render();});
+  svg.querySelectorAll('[data-go]').forEach(c=>c.onclick=e=>{e.stopPropagation();stageMove(c.dataset.go);});
+  svg.querySelectorAll('[data-node]').forEach(c=>c.onclick=e=>{e.stopPropagation();
+    const sel=state.selected?.kind==="army"?A(state.selected.id):null;
+    if(sel && sel.side==="P"){ const {dist}=dijkstra(sel.node,99);
+      if(dist[c.dataset.node]!==undefined && c.dataset.node!==sel.node){ stageMove(c.dataset.node); return; } }
+    state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node};render();});
+}
+function stageMove(target){ // 1단계: 목적지 미리보기 (확정 전엔 명령 안 내림)
+  if(state.over) return;
+  const a=A(state.selected?.id); if(!a) return;
+  const {dist,prev}=dijkstra(a.node,99);
+  if(dist[target]===undefined||target===a.node){toast("도달 불가");return;}
+  state.pendingMove={armyId:a.id,target,path:pathTo(target,prev),cost:dist[target],
+    attack:armiesAt(target).some(x=>x.side!=="P")};
+  render();
+}
+function confirmMove(){ // 2단계: 확정 → 진군 명령. 부대가 여러 틱에 걸쳐 스스로 이동(▶ 재생/한 틱).
+  const pm=state.pendingMove; if(!pm||state.over) return;
+  const m=Game.orderMove(state,pm.armyId,pm.target);
+  state.pendingMove=null; state.mode="normal";
+  if(!m) state.selected=null;   // 명령 성공 → 선택 해제(도달 타일 하이라이트 끔)
+  toast(m||`🚩 ${NODES[pm.target].name} 방면 진군 — ▶ 재생으로 시간을 흘려 이동`);
+  render();
+}
+function cancelMove(){ state.pendingMove=null; state.mode="normal"; render(); }
+function renderMoveConfirm(){ // 상단엔 안내만, 확정 버튼은 지도 노드 옆 팝업
+  const box=document.getElementById('moveConfirm'); const pm=state.pendingMove;
+  box.innerHTML = pm
+    ? `<span class="res" style="border-color:${pm.attack?'var(--red)':'var(--gold)'}">${pm.attack?'⚔️ 공격 준비':'이동 준비'}: <b>${NODES[pm.target].name}</b> — 지도의 확정 버튼</span>`
+    : "";
+}
+function produce(u,qty,tier){const m=Game.produce(state,u,qty,tier); const lbl=(tier>1?u+" T"+tier:u); toast(m||`${lbl} ×${Math.max(1,qty|0)} 생산 대기열`); render();}
+function construct(key){const m=Game.construct(state,key); toast(m||`🏗 ${key} 건설 시작`); render();}
+function upgradeBuilding(key){const m=Game.upgradeBuilding(state,key); toast(m||`🏗 ${key} 레벨업 시작`); render();}
+function fortifyWall(){const m=Game.fortifyWall(state); toast(m||`🏗 성벽 보강 시작`); render();}
+function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
+function draftAdjust(u,d){Game.draftAdjust(state,u,d); render();}
+function composerHTML(){ // 재사용: 주둔군 → 출전 편성 UI (버튼은 호출부에서)
+  const gar=state.castle.garrison, draft=state.castle.draft;
+  const draftTotal=Object.values(draft).reduce((x,y)=>x+y,0), garTotal=Object.values(gar).reduce((x,y)=>x+y,0);
+  const acap=Game.armySlots(state), acur=Game.pArmyCount(state), afull=!Game.canAddArmy(state);
+  let h=`<div class="k" style="margin-bottom:4px">🚩 출전 편성 <span class="k">(주둔 ${garTotal} · 부대 <span style="color:${afull?'#fca5a5':'#cbd5e1'}">${acur}/${acap}</span>)</span></div>`;
+  if(afull) h+=`<div class="k" style="font-size:11px;color:#fca5a5">부대 수 상한 도달 — 성 레벨업·군제 개편 연구로 확대</div>`;
+  if(garTotal===0 && draftTotal===0) return h+`<div class="k" style="font-size:12px">주둔 병력 없음 — 성에서 생산하세요.</div>`;
+  const keys=[...new Set([...Object.keys(gar),...Object.keys(draft)])].sort((a,b)=>baseOf(a).localeCompare(baseOf(b))||tierOf(a)-tierOf(b));
+  for(const u of keys){ const avail=gar[u]||0, d=draft[u]||0; if(avail+d<=0) continue;
+    h+=`<div class="prodrow"><span class="nm">${unitLabel(u)} <span class="k">보유 ${avail}</span></span>
+      <button class="minibtn" data-draft="${u}" data-d="-1" ${d<=0?"disabled":""}>−</button>
+      <span style="min-width:18px;text-align:center">${d}</span>
+      <button class="minibtn" data-draft="${u}" data-d="1" ${d>=avail||draftTotal>=ARMY_CAP?"disabled":""}>＋</button></div>`;
+  }
+  return h+`<div class="k" style="font-size:12px;margin-top:4px">편성 ${draftTotal}/${ARMY_CAP}</div>`;
+}
+function deploy(){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const army=Game.deploy(state); if(army){state.selected={kind:"army",id:army.id};state.mode="normal";toast(`${army.name} 성에 출전!`);} render();}
+function deployTo(target){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const r=Game.deployTo(state,target); if(!r.army){toast("편성된 병력이 없습니다");return;}
+  state.selected = r.target ? null : {kind:"army",id:r.army.id};   // 진군 명령이면 선택 해제
+  toast(r.target?`${r.army.name} 출전 → ${NODES[target].name} 방면 진군 (▶ 재생으로 이동)`:`${r.army.name} 성에 출전!`); render();}
+function disband(id){const m=Game.disband(state,id); if(m){toast(m);return;} state.selected={kind:"node",id:"P"}; toast("부대 귀환 — 병력이 주둔군에 합류"); render();}
+function buildEcon(k){const m=Game.buildEcon(state,k); toast(m||`🏗 ${k} 레벨업 시작`); render();}
+function buildUniversity(){const m=Game.buildUniversity(state); toast(m||"🏗 대학 건설 시작"); render();}
+function buildTavern(){const m=Game.buildTavern(state); toast(m||"🏗 선술집 건설 시작"); render();}
+function recruitHero(cid){const m=Game.recruitHero(state,cid); toast(m||"영웅 영입 완료 — 대기 상태로 합류"); render();}
+function specialRecruit(){const m=Game.specialRecruit(state); toast(m||"★3 영웅 특별 영입 성공!"); render();}
+function startResearch(k){const m=Game.startResearch(state,k); toast(m||`${k} 연구 시작`); render();}
+function levelUp(){const m=Game.levelUp(state); toast(m||"🏗 성 레벨업 시작"); render();}
+function assignHero(hid,loc){Game.assignHero(state,hid,loc); toast(`${heroById(hid).name} → ${loc==="castle"?"성":loc==="idle"?"대기":A(loc)?.name}`); render();}
+
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1600);}
+
+/* 전투·AI·규칙은 game.js 담당 (Game.*). UI만 아래에. */
+function showModal(html){document.getElementById('modalBody').innerHTML=html;
+  document.getElementById('modal').classList.remove('hidden');
+  const c=document.getElementById('modalClose'); if(c)c.onclick=hideModal;}
+function hideModal(){document.getElementById('modal').classList.add('hidden');}
+function showBattleModal(sum){
+  const pWon=(sum.w==="A"&&sum.aSide==="P")||(sum.w==="B"&&sum.aSide==="E");
+  const tag=sum.w==="draw"?'<span class="k">무승부</span>':(pWon?'<span style="color:var(--blue)">🔵 아군 우세</span>':'<span style="color:var(--red)">🔴 적 우세</span>');
+  const stars=g=>"★".repeat(g);
+  const heroLine=(sum.heroA||sum.heroB)?`<div class="res-line" style="color:var(--gold);font-size:12px">${[sum.heroA?`공격 ${stars(sum.gradeA)} ${sum.heroA}(+${sum.buffA}%)`:"",sum.heroB?`수비 ${stars(sum.gradeB)} ${sum.heroB}(+${sum.buffB}%)`:""].filter(Boolean).join(" · ")}</div>`:"";
+  showModal(`<h2>⚔️ 전투</h2>
+    <div class="res-line">${sum.attacker} <span class="k">→</span> ${sum.defender}${sum.fort?' <span class="k">(방어 보정)</span>':''}</div>
+    ${heroLine}
+    <div class="res-line">${tag}</div><div class="res-line"><b>${sum.result}</b></div>
+    <div class="res-line k">생존 — 공격 ${sum.survA} · 수비 ${sum.survB}</div>
+    <button class="minibtn" id="modalClose">확인</button>`);
+}
+function endGame(){
+  state.over=true; if(typeof rtStop==="function")rtStop(); document.getElementById('endturn').disabled=true;
+  const win=state.winner==="P", raid=state.winBy==="raid";
+  const msg = win ? (raid?"고대성을 수성해 레이드 승리!":"적 수도를 함락했습니다.")
+                  : (raid?"적이 고대성 레이드를 완성했습니다.":"수도를 빼앗겼습니다.");
+  showModal(`<h2>${win?"🏆 승리!":"💀 패배"} <span class="k" style="font-size:14px">${raid?"[레이드]":"[정복]"}</span></h2>
+    <div class="res-line">${msg}</div>
+    <div class="res-line k">${state.turn}턴 소요</div>
+    <button class="minibtn" id="modalClose">닫기</button>`);
+}
+
+/* ===== 저장/불러오기 ===== */
+const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier"];
+function saveSnapshot(){const o={...state,ancientOwner:NODES.ANCIENT.owner};for(const f of UI_FIELDS)delete o[f];return JSON.parse(JSON.stringify(o));}
+function applySave(data){
+  if(typeof rtStop==="function")rtStop();   // 로드/새게임 시 실시간 루프 정지
+  hideModal();                              // 열려있던 전투/종료 모달 닫기
+  for(const k in state){if(!UI_FIELDS.includes(k))delete state[k];}
+  Object.assign(state,data); NODES.ANCIENT.owner=data.ancientOwner!==undefined?data.ancientOwner:null; delete state.ancientOwner;
+  state.selected=null;state.pendingMove=null;state.mode="normal"; state.castleTab=state.castleTab||"건물"; state.prodTier=state.prodTier||{};
+  state.quests=state.quests||{done:[],idx:0};   // 구버전 세이브 호환
+  document.getElementById('endturn').disabled=!!state.over; render();
+}
+function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}
+function loadLocal(){try{const s=localStorage.getItem(SAVE_KEY);if(!s){toast("저장된 판이 없습니다");return;}applySave(JSON.parse(s));toast("📂 불러왔습니다 — 턴 "+state.turn);}catch(e){toast("⚠ 불러오기 실패");}}
+function exportFile(){const blob=new Blob([JSON.stringify(saveSnapshot())],{type:"application/json"});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download="mini4x_턴"+state.turn+".json";a.click();URL.revokeObjectURL(a.href);toast("⬇ 세이브 파일 내보냄");}
+function importFile(file){const r=new FileReader();r.onload=()=>{try{applySave(JSON.parse(r.result));toast("⬆ 가져왔습니다 — 턴 "+state.turn);}catch(e){toast("⚠ 파일 형식 오류");}};r.readAsText(file);}
+function newGameReset(){if(!confirm("새 게임을 시작할까요? 저장 안 한 진행은 사라집니다."))return;applySave({...Game.newGame(),ancientOwner:null});toast("🆕 새 게임");}
+document.getElementById('saveBtn').onclick=()=>saveLocal(false);
+document.getElementById('loadBtn').onclick=loadLocal;
+document.getElementById('exportBtn').onclick=exportFile;
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+document.getElementById('importFile').onchange=e=>{if(e.target.files[0])importFile(e.target.files[0]);e.target.value="";};
+document.getElementById('newBtn').onclick=newGameReset;
+
+/* ===== 턴 / 실시간 루프 (일시정지 가능) ===== */
+// 한 틱 = endTurn + 렌더 + 저장 + 사건 처리. 수동 버튼과 실시간 루프가 공유(단일 소스).
+function stepTurn(){
+  if(state.over) return;
+  const r=Game.endTurn(state);
+  render(); saveLocal(true);   // 매 틱 자동 저장
+  if(r.enemyBattle){ rtPause(); showBattleModal(r.enemyBattle); }   // 전투 → 자동 일시정지 + 관전
+  if(state.over){ endGame(); return; }
+  else if(r.questsCompleted&&r.questsCompleted.length) toast(`🎯 목표 달성: ${r.questsCompleted[r.questsCompleted.length-1].name}!`);
+  else if(r.built) toast(`🏗 ${r.built} 완성!`);
+  else if(!r.enemyBattle) toast("⏱ 시간 경과 — 수입·생산 정산");
+}
+// 실시간 상태(UI 전용, 저장 안 함). 기본 일시정지 — 플레이어가 첫 수를 두고 ▶ 재생.
+let rtPaused=true, rtSpeed=1, rtTimer=null;
+const RT_BASE=2500;   // 1x 틱 간격(ms). 클릭 기반 조작에 여유를 주려 느긋하게(배속 2x=1.25s·4x=0.625s).
+function rtStop(){ rtPaused=true; if(rtTimer){clearInterval(rtTimer);rtTimer=null;} rtSync(); }
+function rtPause(){ rtStop(); }
+function rtPlay(){ if(state.over)return; rtPaused=false; if(rtTimer)clearInterval(rtTimer);
+  rtTimer=setInterval(()=>{ if(!rtPaused&&!state.over) stepTurn(); }, RT_BASE/rtSpeed); rtSync(); }
+function rtToggle(){ rtPaused?rtPlay():rtPause(); }
+function rtSetSpeed(s){ rtSpeed=s; if(!rtPaused)rtPlay(); rtSync(); }   // 재생 중이면 재시작으로 간격 반영
+function rtSync(){ const pb=document.getElementById('rtPlay'); if(!pb)return;
+  pb.textContent=rtPaused?"▶ 재생":"⏸ 일시정지";
+  pb.style.background=rtPaused?"":"var(--green)"; pb.style.color=rtPaused?"":"#04240f";
+  document.querySelectorAll('.rtspeed').forEach(b=>{const on=+b.dataset.spd===rtSpeed;
+    b.style.background=on?'var(--gold)':''; b.style.color=on?'#04240f':''; b.style.borderColor=on?'var(--gold)':'';});
+}
+// 컨트롤 주입 (템플릿 무수정): #endturn 앞에 ▶재생/배속 삽입, #endturn 은 "수동 한 틱".
+(function(){ const et=document.getElementById('endturn'); if(!et)return;
+  et.textContent="⏭ 한 틱"; et.title="수동으로 한 틱 진행(일시정지 중 유용)";
+  const w=document.createElement('span'); w.style.cssText="display:flex;gap:3px;align-items:center";
+  w.innerHTML=`<button id="rtPlay" title="시간 재생/일시정지">▶ 재생</button>`
+    +[1,2,4].map(s=>`<button class="rtspeed minibtn" data-spd="${s}" title="배속 ${s}x">${s}x</button>`).join("");
+  et.parentNode.insertBefore(w, et);
+  document.getElementById('rtPlay').onclick=rtToggle;
+  w.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>rtSetSpeed(+b.dataset.spd));
+})();
+document.getElementById('endturn').onclick=stepTurn;
+document.getElementById('castleBtn').onclick=()=>{state.pendingMove=null;state.selected={kind:"node",id:"P"};render();};
+svg.addEventListener('click',()=>{state.selected=null;state.pendingMove=null;state.mode="normal";render();});
+render(); rtSync();
+try{ if(localStorage.getItem(SAVE_KEY)) toast("이전 저장 있음 — 📂 눌러 이어하기 · ▶ 재생으로 시간 시작"); }catch(e){}
+
+</script>
+</body>
+</html>

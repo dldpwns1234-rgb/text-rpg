@@ -60,7 +60,9 @@
   const MOVE_TICKS={보병:4,궁병:3,기병:2};
   const UNIT_GROUP={}; for(const grp in GROUPS) for(const u of GROUPS[grp]) UNIT_GROUP[u]=grp;
   const STATNAME={atk:"공격",df:"방어",hp:"체력"};
-  const AI={budgetPerTurn:3,waveSize:30,homeCap:52,tierEvery:18,waveCap:2,waveFrac:0.75}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
+  // 시간 기반 이동으로 수비가 강해져(웨이브가 느리게 도착) 구값(waveSize30)은 AI 무력화 → 상향.
+  // ws40이면 AI 100%(과함), ws38이면 ~40%(명확한 위협+능동 방어로 극복 가능). §10 밸런스 참조.
+  const AI={budgetPerTurn:5,waveSize:38,homeCap:70,tierEvery:16,waveCap:2,waveFrac:0.85}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
 
   const RESEARCH={
     "축성술":{cat:"전투",sub:"공성·수성",req:[],cost:{목재:15,철:15},turns:2,desc:"내 성 수비 +15%"},

@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>판타지 미니 4X — Phase A 전투 프로토타입</title>
+<style>
+  :root{
+    --bg:#0f172a; --card:#1e293b; --card2:#273449; --line:#334155;
+    --txt:#e2e8f0; --dim:#94a3b8; --blue:#3b82f6; --red:#ef4444;
+    --green:#22c55e; --amber:#f59e0b;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,"Malgun Gothic","맑은 고딕",system-ui,sans-serif;
+    padding:16px;line-height:1.4;}
+  h1{font-size:20px;margin:0 0 2px;}
+  .sub{color:var(--dim);font-size:13px;margin-bottom:14px;}
+  .controls{display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:12px 16px;margin-bottom:14px;}
+  .controls label{font-size:13px;color:var(--dim);display:flex;align-items:center;gap:8px;}
+  .controls input[type=range]{width:120px;}
+  .val{color:var(--txt);font-weight:600;min-width:34px;display:inline-block;text-align:right;}
+  .arena{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media(max-width:820px){.arena{grid-template-columns:1fr;}}
+  .side{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;}
+  .side.A{border-top:3px solid var(--blue);}
+  .side.B{border-top:3px solid var(--red);}
+  .side h2{font-size:15px;margin:0 0 4px;display:flex;justify-content:space-between;align-items:center;}
+  .tagA{color:var(--blue);} .tagB{color:var(--red);}
+  .slots{font-size:12px;color:var(--dim);}
+  .slots b{color:var(--txt);}
+  .presets{margin:6px 0 10px;display:flex;gap:6px;flex-wrap:wrap;}
+  .presets button, .hero-btn{background:var(--card2);color:var(--txt);border:1px solid var(--line);
+    border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;}
+  .presets button:hover,.hero-btn:hover{background:var(--line);}
+  .hero-btn.on{background:var(--amber);color:#1a1200;border-color:var(--amber);font-weight:600;}
+  .urow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--card2);}
+  .uname{flex:1;font-size:13px;}
+  .uname small{color:var(--dim);font-size:11px;}
+  .stepper{display:flex;align-items:center;gap:4px;}
+  .stepper button{width:24px;height:24px;border-radius:6px;border:1px solid var(--line);
+    background:var(--card2);color:var(--txt);font-size:15px;cursor:pointer;line-height:1;}
+  .stepper input{width:38px;text-align:center;background:var(--bg);color:var(--txt);
+    border:1px solid var(--line);border-radius:6px;padding:3px;font-size:13px;}
+  .tier{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;
+    padding:3px 4px;font-size:12px;}
+  .go{display:flex;gap:10px;justify-content:center;margin:16px 0;}
+  .go button{font-size:15px;font-weight:700;padding:10px 22px;border-radius:10px;border:none;cursor:pointer;}
+  #fight{background:var(--green);color:#04240f;}
+  #stats{background:var(--card2);color:var(--txt);border:1px solid var(--line);}
+  .go button:disabled{opacity:.5;cursor:default;}
+  .battlefield{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:12px;}
+  .bf{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;min-height:120px;}
+  .bf.A{border-left:3px solid var(--blue);} .bf.B{border-left:3px solid var(--red);}
+  .rowlabel{font-size:11px;color:var(--dim);margin:6px 0 2px;text-transform:uppercase;letter-spacing:.5px;}
+  .stack{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px;}
+  .stack .n{width:78px;flex:none;}
+  .bar{flex:1;height:14px;background:var(--bg);border-radius:7px;overflow:hidden;border:1px solid var(--line);}
+  .fill{height:100%;transition:width .35s ease;}
+  .A .fill{background:linear-gradient(90deg,#1d4ed8,#60a5fa);}
+  .B .fill{background:linear-gradient(90deg,#b91c1c,#f87171);}
+  .cnt{width:52px;text-align:right;color:var(--dim);flex:none;font-variant-numeric:tabular-nums;}
+  .status{text-align:center;font-size:14px;margin:10px 0;min-height:22px;font-weight:600;}
+  .log{background:#0b1220;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+    font-size:12px;color:var(--dim);height:120px;overflow:auto;margin-top:12px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;}
+  .log div{padding:1px 0;}
+  .banner{text-align:center;font-size:18px;font-weight:800;padding:12px;border-radius:10px;margin-top:10px;}
+  .banner.A{background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid var(--blue);}
+  .banner.B{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid var(--red);}
+  .banner.draw{background:rgba(148,163,184,.15);color:var(--dim);border:1px solid var(--line);}
+  .hint{color:var(--dim);font-size:12px;text-align:center;margin-top:8px;}
+</style>
+</head>
+<body>
+<h1>⚔️ 판타지 미니 4X — Phase A 전투 프로토타입</h1>
+<div class="sub">양쪽 군대를 편성하고 전투를 관전하세요. 검증된 전투 규칙(병과 상성·특수·티어·슬롯 상한·라운드 캡 + 전열 피해 분산)을 그대로 구현했습니다.</div>
+
+<div class="controls">
+  <label>슬롯 상한(부대당) <input type="range" id="slotCap" min="8" max="40" value="24"><span class="val" id="slotCapV">24</span></label>
+  <label>라운드 캡 <input type="range" id="roundCap" min="4" max="40" value="12"><span class="val" id="roundCapV">12</span></label>
+  <label>관전 속도 <input type="range" id="speed" min="1" max="10" value="6"><span class="val" id="speedV">6</span></label>
+</div>
+
+<div class="arena">
+  <div class="side A" id="sideA"></div>
+  <div class="side B" id="sideB"></div>
+</div>
+
+<div class="go">
+  <button id="fight">⚔️ 전투 시작</button>
+  <button id="stats">📊 100회 통계</button>
+</div>
+
+<div class="status" id="status"></div>
+<div class="battlefield">
+  <div class="bf A" id="bfA"></div>
+  <div class="bf B" id="bfB"></div>
+</div>
+<div class="log" id="log"></div>
+<div class="hint">TIP: 프리셋으로 병과 상성(보병▶기병▶궁병▶보병)을 빠르게 시험해 보세요. 창병은 기병을 요격하고, 경기병은 후방 궁병을 노립니다.</div>
+
+<script>
+/* ==== engine.js 인라인 (build.js 생성, 직접 수정 금지) ==== */
+/* =====================================================================
+   mini4x 전투 엔진 — 단일 캔노니컬 소스 (node + 브라우저 공용)
+   - 규칙: 기획서 §7 (3병과×2클래스, 3열, 특수 확률, 특화 ×1.4,
+           전열 피해 분산 ②, 창병 요격, 티어 배율)
+   - node:    const E = require('./engine.js');  E.simulate(...)
+   - 브라우저: <script>로 인라인되면 UNITS/simulate 등이 그대로 전역
+   - 수치는 여기서만 고친다 → verify.js / 프로토타입이 함께 따라옴
+   ===================================================================== */
+'use strict';
+
+const CONST = { FLOOR:0.15, FALLBACK:0.85, SPEC_MULT:1.4, SPLIT:0.6, COUNTER_MULT:2.0, HERO_BUFF:0.20,
+  BATTLE_ROUNDS:40 };  // 게임·검증 공용 전투 라운드 캡. HP×1.0에서 전투는 ~30R에 결착 → 40R이면 무승부 소멸. game.js/verify.js가 이 값을 참조(드리프트 방지).
+
+const UNITS = {
+  "중갑보병":{hp:120,atk:8, df:12,proc:0.0, row:"front",kind:"tank",  desc:"방어 탱커"},
+  "창병":   {hp:100,atk:12,df:6, proc:0.55,row:"front",kind:"spear", desc:"대기병 요격"},
+  "장궁병": {hp:65, atk:16,df:3, proc:0.35,row:"back", kind:"gen_am",desc:"범용(앞+중)"},
+  "석궁병": {hp:60, atk:16,df:3, proc:0.0, row:"back", kind:"spec",  desc:"대보병 특화"},
+  "경기병": {hp:95, atk:17,df:5, proc:0.45,row:"mid",  kind:"gen_ab",desc:"범용(앞+뒤)"},
+  "중기병": {hp:105,atk:12,df:8, proc:0.0, row:"mid",  kind:"spec",  desc:"대보병 돌격"},
+  // ===== 몬스터 (PvE 전용, 밸런스 검증 대상 아님) =====
+  "늑대":  {hp:70, atk:14,df:3, proc:0.0, row:"front",kind:"tank", desc:"기동형 야수", monster:true},
+  "고블린":{hp:60, atk:10,df:4, proc:0.0, row:"front",kind:"tank", desc:"약한 몬스터", monster:true},
+  "오크":  {hp:150,atk:16,df:10,proc:0.0, row:"front",kind:"tank", desc:"강력한 전위", monster:true},
+  "하피":  {hp:70, atk:17,df:3, proc:0.0, row:"back", kind:"tank", desc:"후방 비행 위협", monster:true},
+  "오우거":{hp:280,atk:26,df:12,proc:0.0, row:"front",kind:"tank", desc:"거대 보스", monster:true},
+};
+const NAMES = Object.keys(UNITS);
+const ROWS  = ["front","mid","back"];
+const ROWKO = {front:"앞 · 보병", mid:"중 · 기병", back:"뒤 · 궁병"};
+
+const tierMult = t => 1 + (t-1)*0.15;
+const dmg = (a,d) => Math.max(a*CONST.FLOOR, a-d);
+
+function makeArmy(comp, hero, mods){    // mods: {유닛명:{atk,df,hp}} 병종별 스탯 배율(연구)
+  const rows = {front:[], mid:[], back:[]};
+  // hero: true → +HERO_BUFF, 숫자 → 그 비율만큼 버프(연구·성벽 등 합산용), false/0 → 없음
+  const buff = hero===true ? CONST.HERO_BUFF : (typeof hero==="number" ? hero : 0);
+  for(const c of comp){
+    if(!c || c.count<=0) continue;
+    const u=UNITS[c.name], tm=tierMult(c.tier||1), hb=1+buff;
+    const m = mods && mods[c.name] ? mods[c.name] : null;
+    const st={name:c.name,row:u.row,kind:u.kind,proc:u.proc,tier:c.tier||1,
+      atk:u.atk*tm*hb*((m&&m.atk)||1), df:u.df*tm*hb*((m&&m.df)||1), maxhp:u.hp*tm*hb*((m&&m.hp)||1), init:c.count};
+    st.pool=st.maxhp*c.count;
+    rows[u.row].push(st);
+  }
+  return rows;
+}
+const aliveCount = s => s.pool>0 ? Math.ceil(s.pool/s.maxhp) : 0;
+const dead = s => s.pool<=0;
+function frontmost(r){ for(const x of ROWS){ const L=r[x].filter(s=>!dead(s)); if(L.length) return L[0]; } return null; }
+function rowTarget(r,x){ const L=r[x].filter(s=>!dead(s)); return L.length?L[0]:null; }
+function spearsFront(r){ return r.front.filter(s=>!dead(s)&&s.kind==="spear"); }
+function allStacks(r){ return [...r.front,...r.mid,...r.back].filter(s=>!dead(s)); }
+function wiped(r){ return frontmost(r)===null; }
+
+function planAttacks(att, enemy, ev){
+  const A=[];
+  for(const s of allStacks(att)){
+    const a=aliveCount(s), base=s.atk, k=s.kind;
+    if(a<=0) continue;
+    if(k==="tank"||k==="spear"){ const t=frontmost(enemy); if(t) A.push([t,base,a,s]); }
+    else if(k==="spec"){ let t=rowTarget(enemy,"front");
+      if(t) A.push([t,base*CONST.SPEC_MULT,a,s]);
+      else { t=frontmost(enemy); if(t) A.push([t,base*CONST.FALLBACK,a,s]); } }
+    else { const deep = k==="gen_am"?"mid":"back";
+      if(Math.random()<s.proc){ const d=rowTarget(enemy,deep);
+        if(d){ const ft=frontmost(enemy); A.push([ft,base*CONST.SPLIT,a,s]); A.push([d,base*CONST.SPLIT,a,s]); if(ev) ev.proc++; }
+        else { const t=frontmost(enemy); if(t) A.push([t,base*CONST.FALLBACK,a,s]); } }
+      else { const t=frontmost(enemy); if(t) A.push([t,base,a,s]); } }
+  }
+  return A;
+}
+function resolveRound(A,B,ev){
+  const pa=planAttacks(A,B,ev), pb=planAttacks(B,A,ev);
+  const dm=new Map(), add=(s,v)=>dm.set(s,(dm.get(s)||0)+v);
+  function tally(plan, def){
+    for(const [t,ap,cnt,src] of plan){
+      if(!t||dead(t)) continue;
+      const amount = cnt*dmg(ap,t.df);
+      if(t.row==="front"){                       // ② 전열 피해 분산
+        const fs=def.front.filter(s=>!dead(s));
+        let tot=fs.reduce((x,s)=>x+aliveCount(s),0);
+        if(tot<=0) add(t,amount); else for(const s of fs) add(s, amount*aliveCount(s)/tot);
+      } else add(t, amount);
+      if(src.row==="mid" && t.row==="front"){     // 창병 요격
+        for(const sp of spearsFront(def)){
+          let nc=0, eng=aliveCount(sp);
+          for(let i=0;i<eng;i++) if(Math.random()<sp.proc) nc++;
+          if(nc>0){ add(src, nc*dmg(sp.atk*CONST.COUNTER_MULT, src.df)); if(ev) ev.counter+=nc; }
+        }
+      }
+    }
+  }
+  tally(pa,B); tally(pb,A);
+  for(const [s,v] of dm) s.pool-=v;
+}
+function snapshot(r){
+  const live=allStacks(r).map(s=>({name:s.name,row:s.row,tier:s.tier,alive:aliveCount(s),init:s.init}));
+  const gone=[...r.front,...r.mid,...r.back].filter(s=>dead(s)).map(s=>({name:s.name,row:s.row,tier:s.tier,alive:0,init:s.init}));
+  return live.concat(gone);
+}
+
+/* 관전용: 타임라인 프레임 포함 */
+function simulate(compA,heroA,compB,heroB,maxRounds,modsA,modsB){
+  const A=makeArmy(compA,heroA,modsA), B=makeArmy(compB,heroB,modsB);
+  const hp=r=>allStacks(r).reduce((x,s)=>x+s.pool,0);
+  const h0A=hp(A), h0B=hp(B);
+  const frames=[{round:0,A:snapshot(A),B:snapshot(B),log:"전투 개시!"}];
+  let r=0;
+  for(let i=0;i<maxRounds;i++){
+    if(wiped(A)||wiped(B)) break;
+    const ev={proc:0,counter:0};
+    const preA=allStacks(A).reduce((x,s)=>x+aliveCount(s),0), preB=allStacks(B).reduce((x,s)=>x+aliveCount(s),0);
+    resolveRound(A,B,ev); r++;
+    const postA=allStacks(A).reduce((x,s)=>x+aliveCount(s),0), postB=allStacks(B).reduce((x,s)=>x+aliveCount(s),0);
+    let log=`R${r}: 아군 -${preA-postA}, 적 -${preB-postB}`;
+    if(ev.proc) log+=` · 특수 ${ev.proc}회`;
+    if(ev.counter) log+=` · 창병 요격 ${ev.counter}`;
+    frames.push({round:r,A:snapshot(A),B:snapshot(B),log});
+  }
+  let w;
+  if(wiped(A)&&!wiped(B)) w="B";
+  else if(wiped(B)&&!wiped(A)) w="A";
+  else if(wiped(A)&&wiped(B)) w="draw";
+  else { const fa=h0A?hp(A)/h0A:0, fb=h0B?hp(B)/h0B:0; w=Math.abs(fa-fb)<0.05?"draw":(fa>fb?"A":"B"); }
+  return {frames, w, rounds:r,
+    survA:allStacks(A).reduce((x,s)=>x+aliveCount(s),0),
+    survB:allStacks(B).reduce((x,s)=>x+aliveCount(s),0)};
+}
+/* 검증용: 가벼운 승패 + 승률 */
+function battle(compA,heroA,compB,heroB,maxRounds){ return simulate(compA,heroA,compB,heroB,maxRounds).w; }
+function winrate(compA,compB,opts){
+  opts=opts||{}; const t=opts.trials||500, mr=opts.maxRounds||CONST.BATTLE_ROUNDS, hA=!!opts.heroA, hB=!!opts.heroB;
+  let w=0; for(let i=0;i<t;i++) if(battle(compA,hA,compB,hB,mr)==="A") w++; return w/t;
+}
+
+const API = { CONST, UNITS, NAMES, ROWS, ROWKO, tierMult, dmg, makeArmy, simulate, battle, winrate };
+if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate; self.Engine = API; }
+
+
+/* ===== UI 상태 ===== */
+const state={
+  A:{hero:false,units:{}}, B:{hero:false,units:{}}
+};
+NAMES.forEach(n=>{state.A.units[n]={count:0,tier:1};state.B.units[n]={count:0,tier:1};});
+
+const PRESETS={
+  "보병군":{중갑보병:8,창병:10,장궁병:4},
+  "기병군":{중갑보병:4,경기병:12,중기병:6},
+  "궁병군":{중갑보병:8,장궁병:8,석궁병:6},
+  "혼성군":{중갑보병:6,창병:4,경기병:4,장궁병:4,석궁병:2},
+  "비우기":{}
+};
+
+function slotCap(){return +document.getElementById('slotCap').value;}
+function usedSlots(side){return NAMES.reduce((x,n)=>x+state[side].units[n].count,0);}
+
+function buildSide(side){
+  const el=document.getElementById('side'+side);
+  const tag=side==='A'?'아군':'적군';
+  el.innerHTML=`<h2><span class="tag${side}">${side==='A'?'🔵':'🔴'} ${tag}</span>
+    <span class="slots">슬롯 <b id="used${side}">0</b>/<b id="cap${side}">${slotCap()}</b></span></h2>
+    <div class="presets" id="pre${side}"></div>
+    <div id="rows${side}"></div>`;
+  const pre=document.getElementById('pre'+side);
+  Object.keys(PRESETS).forEach(p=>{
+    const b=document.createElement('button');b.textContent=p;
+    b.onclick=()=>applyPreset(side,p);pre.appendChild(b);
+  });
+  const hb=document.createElement('button');hb.className='hero-btn';hb.id='hero'+side;
+  hb.textContent='🦸 전투영웅 OFF';
+  hb.onclick=()=>{state[side].hero=!state[side].hero;
+    hb.classList.toggle('on',state[side].hero);
+    hb.textContent=state[side].hero?'🦸 전투영웅 ON (+20%)':'🦸 전투영웅 OFF';};
+  pre.appendChild(hb);
+  const rows=document.getElementById('rows'+side);
+  NAMES.forEach(n=>{
+    const u=UNITS[n];
+    const d=document.createElement('div');d.className='urow';
+    d.innerHTML=`<div class="uname">${n} <small>${u.desc}</small></div>
+      <select class="tier" id="tier${side}${n}">${[1,2,3,4,5].map(t=>`<option value="${t}">T${t}</option>`).join('')}</select>
+      <div class="stepper">
+        <button data-d="-1">−</button>
+        <input type="number" id="cnt${side}${n}" value="0" min="0">
+        <button data-d="1">+</button>
+      </div>`;
+    rows.appendChild(d);
+    const inp=d.querySelector('input');
+    const setC=v=>{v=Math.max(0,v|0);
+      const others=usedSlots(side)-state[side].units[n].count;
+      if(others+v>slotCap()) v=Math.max(0,slotCap()-others);
+      state[side].units[n].count=v;inp.value=v;refreshSlots(side);};
+    d.querySelectorAll('.stepper button').forEach(b=>b.onclick=()=>setC(state[side].units[n].count+ (+b.dataset.d)));
+    inp.onchange=()=>setC(+inp.value);
+    d.querySelector('select').onchange=e=>state[side].units[n].tier=+e.target.value;
+  });
+  refreshSlots(side);
+}
+function refreshSlots(side){
+  document.getElementById('used'+side).textContent=usedSlots(side);
+  document.getElementById('cap'+side).textContent=slotCap();
+}
+function applyPreset(side,p){
+  const cfg=PRESETS[p];
+  NAMES.forEach(n=>{state[side].units[n].count=cfg[n]||0;
+    document.getElementById('cnt'+side+n).value=cfg[n]||0;});
+  // 슬롯 초과 방지
+  let u=usedSlots(side);
+  if(u>slotCap()){NAMES.slice().reverse().forEach(n=>{
+    while(usedSlots(side)>slotCap()&&state[side].units[n].count>0){state[side].units[n].count--;}
+    document.getElementById('cnt'+side+n).value=state[side].units[n].count;});}
+  refreshSlots(side);
+}
+function compOf(side){return NAMES.map(n=>({name:n,count:state[side].units[n].count,tier:state[side].units[n].tier}));}
+
+/* ===== 렌더 ===== */
+function renderFrame(fr){
+  ['A','B'].forEach(side=>{
+    const bf=document.getElementById('bf'+side);
+    let html='';
+    ROWS.forEach(row=>{
+      const items=fr[side].filter(s=>s.row===row);
+      if(!items.length)return;
+      html+=`<div class="rowlabel">${ROWKO[row]}</div>`;
+      items.forEach(s=>{
+        const pct=s.init?Math.round(100*s.alive/s.init):0;
+        html+=`<div class="stack"><span class="n">${s.name}${s.tier>1?' T'+s.tier:''}</span>
+          <span class="bar"><span class="fill" style="width:${pct}%"></span></span>
+          <span class="cnt">${s.alive}/${s.init}</span></div>`;
+      });
+    });
+    bf.innerHTML=html||'<div class="rowlabel">전멸</div>';
+  });
+}
+function log(msg,cls){const l=document.getElementById('log');
+  const d=document.createElement('div');d.textContent=msg;if(cls)d.style.color=cls;l.appendChild(d);l.scrollTop=l.scrollHeight;}
+
+let playing=false;
+function fight(){
+  if(playing)return;
+  const cA=compOf('A'),cB=compOf('B');
+  if(usedSlots('A')===0||usedSlots('B')===0){document.getElementById('status').textContent='양쪽 모두 병력을 편성하세요.';return;}
+  const res=simulate(cA,state.A.hero,cB,state.B.hero,+document.getElementById('roundCap').value);
+  document.getElementById('log').innerHTML='';
+  document.getElementById('status').textContent='⚔️ 전투 중...';
+  playing=true;document.getElementById('fight').disabled=true;document.getElementById('stats').disabled=true;
+  const spd=+document.getElementById('speed').value;
+  const interval=Math.max(120,900-spd*80);
+  let i=0;
+  const step=()=>{
+    const fr=res.frames[i];renderFrame(fr);if(fr.log)log(fr.log);
+    i++;
+    if(i<res.frames.length){setTimeout(step,interval);}
+    else{
+      const banner=document.createElement('div');
+      banner.className='banner '+res.w;
+      banner.textContent = res.w==='draw'?`무승부 (${res.rounds}R 소진)`
+        :(res.w==='A'?`🔵 아군 승리!`:`🔴 적군 승리!`)+`  (${res.rounds}R, 생존 아군 ${res.survA} · 적 ${res.survB})`;
+      const old=document.querySelector('.banner');if(old)old.remove();
+      document.querySelector('.battlefield').after(banner);
+      document.getElementById('status').textContent='';
+      playing=false;document.getElementById('fight').disabled=false;document.getElementById('stats').disabled=false;
+    }
+  };
+  const old=document.querySelector('.banner');if(old)old.remove();
+  step();
+}
+function stats(){
+  const cA=compOf('A'),cB=compOf('B');
+  if(usedSlots('A')===0||usedSlots('B')===0){document.getElementById('status').textContent='양쪽 모두 병력을 편성하세요.';return;}
+  const mr=+document.getElementById('roundCap').value;
+  let w={A:0,B:0,draw:0};
+  for(let i=0;i<100;i++){w[simulate(cA,state.A.hero,cB,state.B.hero,mr).w]++;}
+  document.getElementById('status').innerHTML=
+    `📊 100회 결과 — <span class="tagA">아군 ${w.A}승</span> · <span class="tagB">적군 ${w.B}승</span> · 무 ${w.draw}`;
+}
+
+/* ===== 초기화 ===== */
+['slotCap','roundCap','speed'].forEach(id=>{
+  const el=document.getElementById(id);
+  el.oninput=()=>{document.getElementById(id+'V').textContent=el.value;if(id==='slotCap'){refreshSlots('A');refreshSlots('B');}};
+});
+buildSide('A');buildSide('B');
+applyPreset('A','보병군');applyPreset('B','기병군');
+document.getElementById('fight').onclick=fight;
+document.getElementById('stats').onclick=stats;
+renderFrame({A:compOf('A').filter(u=>u.count).map(u=>({name:u.name,row:UNITS[u.name].row,tier:u.tier,alive:u.count,init:u.count})),
+             B:compOf('B').filter(u=>u.count).map(u=>({name:u.name,row:UNITS[u.name].row,tier:u.tier,alive:u.count,init:u.count}))});
+</script>
+</body>
+</html>
