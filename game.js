@@ -63,6 +63,8 @@
   // 시간 기반 이동으로 수비가 강해져(웨이브가 느리게 도착) 구값(waveSize30)은 AI 무력화 → 상향.
   // ws40이면 AI 100%(과함), ws38이면 ~40%(명확한 위협+능동 방어로 극복 가능). §10 밸런스 참조.
   const AI={budgetPerTurn:5,waveSize:38,homeCap:70,tierEvery:16,waveCap:2,waveFrac:0.85}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
+  // 시즌형 침공(B2): N턴마다 예고→도래하는 대규모 원정대. 도래마다 간격이 줄고(escalating) 규모가 커짐(횟수·국력 둘 다 반영).
+  const SEASON_INTERVAL=60, SEASON_MIN_INTERVAL=30, SEASON_WARN_LEAD=12, SEASON_BASE=30, SEASON_GROWTH=0.35;
 
   const RESEARCH={
     "축성술":{cat:"전투",sub:"공성·수성",req:[],cost:{목재:15,철:15},turns:2,desc:"내 성 수비 +15%"},
@@ -123,14 +125,20 @@
   const randomTile=g=>{const cands=Object.keys(NODES).filter(id=>NODES[id].type==="plain"&&!g.armies.some(a=>a.node===id)&&!ADJ[id].some(n=>NODES[n.to].type==="castle"));
     return cands.length?cands[Math.floor(Math.random()*cands.length)]:null;};
   function spawnRoamer(g,tmpl){const node=randomTile(g); if(!node)return null;
-    const a={id:"MON"+(g._nid++),side:"M",node,mp:0,maxMp:0,name:tmpl.name,mtier:tmpl.mtier,comp:{...tmpl.comp},hero:null,reward:{...tmpl.reward},roamer:true};
+    const a={id:"MON"+(g._nid++),side:"M",node,mp:0,maxMp:0,name:tmpl.name,mtier:tmpl.mtier,comp:scaleComp(tmpl.comp,monsterScale(g)),hero:null,reward:{...tmpl.reward},roamer:true};
     g.armies.push(a); return a;}
   function dijkstra(start,maxCost){const dist={[start]:0},prev={},pq=[[0,start]];
     while(pq.length){pq.sort((x,y)=>x[0]-y[0]);const[d,u]=pq.shift();if(d>dist[u])continue;
       for(const{to,cost}of ADJ[u]){const nd=d+cost;if(nd<=maxCost&&(dist[to]===undefined||nd<dist[to])){dist[to]=nd;prev[to]=u;pq.push([nd,to]);}}}
     return{dist,prev};}
   function pathTo(t,prev){const p=[t];let c=t;while(prev[c]!==undefined){c=prev[c];p.unshift(c);}return p;}
-  const mkMonster=t=>({id:"MON_"+t.node,side:"M",node:t.node,mp:0,maxMp:0,name:t.name,mtier:t.mtier,comp:{...t.comp},hero:null,reward:{...t.reward}});
+  // 스케일링 PvE(B4): 몬스터 병력 수를 국력에 따라 증폭. engine.js 전투 수치는 무변경 — comp 카운트만 조정.
+  const scaleComp=(comp,mult)=>{const c={};for(const k in comp)c[k]=Math.max(1,Math.round(comp[k]*mult));return c;};
+  const monsterScale=g=>Math.min(3, 1+Math.max(0, computeMight(g)-100)/400);   // 국력100↓ 1.0배 · 국력900 3.0배 상한
+  const mkMonster=(t,g,extraMult)=>({id:"MON_"+t.node,side:"M",node:t.node,mp:0,maxMp:0,name:t.name,mtier:t.mtier,
+    comp:scaleComp(t.comp, (g?monsterScale(g):1)*(extraMult||1)), hero:null,reward:{...t.reward}});
+  // ANCIENT 몬스터 템플릿: 타일맵(MSPAWN.raid)·노드맵(MONSTERS 배열) 양쪽 다 지원 — 월드 보스 재등장(B4)이 맵 종류와 무관하게 동작하도록.
+  const ancientTemplate=()=>{ if(MSPAWN&&MSPAWN.raid) return {node:"ANCIENT",...MSPAWN.raid}; return MONSTERS.find(m=>m.node==="ANCIENT")||null; };
 
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
@@ -141,6 +149,8 @@
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
     milestones:{done:[],idx:0,unlocked:[]},   // 마일스톤 진행(A2)
     conquests:0, defeats:0, raidWins:0, raidLosses:0,   // 지속형 왕국 지표(A3) — 게임오버 대신 누적 기록
+    raidBossGen:0,   // 월드 보스(레이드) 재등장 세대(B4) — 재등장할 때마다 +1, 그만큼 강화
+    season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -148,8 +158,8 @@
   }
   function newGame(){ const g=_baseGame();
     if(MSPAWN){ for(let i=0;i<(MSPAWN.count||4);i++) spawnRoamer(g, MSPAWN.pool[i%MSPAWN.pool.length]);
-      if(MSPAWN.raid && NODES.ANCIENT) g.armies.push(mkMonster({node:"ANCIENT",...MSPAWN.raid})); }
-    else for(const m of MONSTERS) g.armies.push(mkMonster(m));
+      if(MSPAWN.raid && NODES.ANCIENT) g.armies.push(mkMonster({node:"ANCIENT",...MSPAWN.raid},g)); }
+    else for(const m of MONSTERS) g.armies.push(mkMonster(m,g));
     return g;
   }
   const newId=(g,p)=>p+(g._nid++);
@@ -246,7 +256,11 @@
       let rw=""; if(defender.side==="M"&&defender.reward){for(const r in defender.reward)g.res[r]=(g.res[r]||0)+defender.reward[r];rw=" · 보상 "+Object.entries(defender.reward).map(([r,v])=>`${r} +${v}`).join(", ");sum.reward=defender.reward;
         if(defender.mtier&&SUBDUE_REWARD[defender.mtier]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[defender.mtier];sum.subdue=SUBDUE_REWARD[defender.mtier];rw+=` · 토벌점수 +${sum.subdue}`;}
         if(defender.mtier&&XP_REWARD[defender.mtier]){g.xpItems=(g.xpItems||0)+XP_REWARD[defender.mtier];sum.xp=XP_REWARD[defender.mtier];rw+=` · 경험치 +${sum.xp}`;}
-        if(defender.mtier&&defender.mtier!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}}
+        if(defender.mtier&&defender.mtier!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}
+        else if(defender.mtier==="레이드"){   // 월드 보스(B4): 세대(gen)만큼 더 강해져 재등장
+          g.raidBossGen=(g.raidBossGen||0)+1;
+          (g.respawns=g.respawns||[]).push({ancient:true,at:g.turn+RESPAWN_DELAY*3});
+        }}
       sum.result=`${attacker.name} ${defender.side==="M"?"소탕 성공":"승리"} · ${defender.name} ${defender.side==="M"?"소멸":"전멸"}${rw}`+(wd?` · 부상 ${wd}`:"");
       removeArmy(g,defender); attacker.node=node; }
     else if(res.w==="B"){ defender.comp=rB; const wd=wound(defender,beforeB,rB); sum.result=`${defender.name} 방어 · ${attacker.name} 전멸`+(wd?` · 부상 ${wd}`:""); removeArmy(g,attacker); }
@@ -300,10 +314,14 @@
   // 둥지 리스폰: 예약된 재생성이 도래하면 몬스터 재배치(점거 중이면 지연)
   function processRespawns(g){ if(!g.respawns||!g.respawns.length)return; const keep=[];
     for(const r of g.respawns){ if(r.at>g.turn){keep.push(r);continue;}
+      if(r.ancient){ const tmpl=ancientTemplate(); if(!tmpl)continue;               // 월드 보스(B4) 재등장(노드맵·타일맵 공용)
+        const occ=armiesAt(g,"ANCIENT"); if(occ.some(a=>a.side==="M"))continue;     // 이미 있음 → 취소
+        if(occ.length){keep.push({ancient:true,at:g.turn+2});continue;}            // 점거 중 → 지연
+        g.armies.push(mkMonster(tmpl, g, 1+0.2*(g.raidBossGen||0))); continue; }
       if(r.random){ if(MSPAWN)spawnRoamer(g, MSPAWN.pool[Math.floor(Math.random()*MSPAWN.pool.length)]); continue; }  // 랜덤 타일 재등장
       const occ=armiesAt(g,r.node); if(occ.some(a=>a.side==="M"))continue;          // 이미 있음 → 취소
       if(occ.some(a=>a.side!=="M")){keep.push({node:r.node,at:g.turn+2});continue;} // 점거 중 → 지연
-      const t=MONSTERS.find(m=>m.node===r.node); if(t)g.armies.push(mkMonster(t)); }
+      const t=MONSTERS.find(m=>m.node===r.node); if(t)g.armies.push(mkMonster(t,g)); }
     g.respawns=keep; }
   // 레이드 수성 카운트: 보스 처치 후 ANCIENT를 한 세력이 점거하면 매턴 +1, 비거나 교전 중이면 리셋
   function raidTick(g){ const R=g.raid; if(!R)return;
@@ -454,6 +472,26 @@
     return null;
   }
 
+  // ---- 시즌형 침공(B2): 예고 → 도래. 기존 웨이브 예산 로직과 별개인 스크립트 이벤트 — 회귀 위험 최소화. ----
+  function seasonTick(g){
+    if(!g.season) g.season={count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false};
+    const s=g.season;
+    if(!s.warned && g.turn>=s.warnAt){ s.warned=true; return {type:"warning",count:s.count,arriveIn:s.next-g.turn}; }
+    if(g.turn>=s.next){
+      const need=Math.round(Math.max(SEASON_BASE*(1+SEASON_GROWTH*(s.count-1)), computeMight(g)*0.22));
+      const cu=playerCounterUnit(g), t=aiTierOf(g), comp={};
+      for(let i=0;i<need;i++){ const u=pickAIUnit(cu), key=uk(u,t); comp[key]=(comp[key]||0)+1; }
+      const target=pickAITarget(g);
+      const e={id:newId(g,"ES"),side:"E",node:"E",mp:0,maxMp:0,name:`시즌 대침공 ${s.count}차`,comp,hero:null,role:"attack",target};
+      g.armies.push(e); orderMove(g,e.id,target);
+      const done=s.count; s.count++;
+      const interval=Math.max(SEASON_MIN_INTERVAL, SEASON_INTERVAL-3*(s.count-1));
+      s.next=g.turn+interval; s.warnAt=s.next-SEASON_WARN_LEAD; s.warned=false;
+      return {type:"arrived",count:done,troops:need};
+    }
+    return null;
+  }
+
   // ---- 온보딩 퀘스트 (초반 빌드 가이드 겸 튜토리얼) ----
   // 선형 체인. done(g)=상태를 받는 순수 조건 함수. 달성 시 questTick 이 보상 지급 후 다음 목표로.
   // 데이터는 여기(단일 소스), 표시는 ui.js renderQuests. 시간모델 무관 → 실시간 전환해도 tick 에서 그대로.
@@ -515,6 +553,7 @@
     let heal=(g.castle.econ["병원"]||0)*3;
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
     aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
+    const seasonEvent=seasonTick(g); // 시즌형 침공(B2) — 예고/도래
     const mt=moveTick(g);            // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투(+세계이벤트)
     raidTick(g);
     g.turn++; tavernTick(g); processRespawns(g);
@@ -522,7 +561,7 @@
     const worldEvent=mt.event||raidEvent;
     const questsCompleted=questTick(g);
     const msCompleted=milestoneTick(g);
-    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, worldEvent};
+    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, worldEvent, seasonEvent};
   }
 
   // ---- 오프라인 누적(A4): 실시각 계산은 ui.js 몫(Date.now()) — 여긴 순수하게 "틱 수"만 받아 진행.
@@ -545,7 +584,7 @@
     TIER_MAX,TIER_NAME,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
-    computeMight,enemyMight,MILESTONES,milestoneTick,offlineTick,
+    computeMight,enemyMight,MILESTONES,milestoneTick,offlineTick,monsterScale,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
