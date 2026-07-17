@@ -141,7 +141,7 @@ const tileFill=n=>n.type==="castle"?"#3b2408":n.type==="resource"?"#0f2e1a":n.ty
 function renderMap(){
   svg.innerHTML="";
   let reach={};
-  if(state.selected?.kind==="army"){const a=A(state.selected.id);if(a?.side==="P")reach=dijkstra(a.node,a.mp).dist;}
+  if(state.selected?.kind==="army"){const a=A(state.selected.id);if(a?.side==="P")reach=dijkstra(a.node,99).dist;}
   const selNode=A(state.selected?.id)?.node;
   const onPath={}; if(state.pendingMove) for(const t of state.pendingMove.path) onPath[t]=1;
   // ---- 타일 ----
@@ -175,7 +175,9 @@ function renderMap(){
     if(g>0){const t=el("text",{x,y:py-2,"text-anchor":"middle","font-size":10,fill:"#4ade80","font-weight":"700","pointer-events":"none"});t.textContent=`⛏+${g}`;svg.appendChild(t);}
   }
   for(const a of state.armies){
-    const[x,y]=COORDS[a.node],others=armiesAt(a.node);
+    let [x,y]=COORDS[a.node]; const others=armiesAt(a.node);
+    if(a.dest&&a.path){const _i=a.path.indexOf(a.node),_nx=a.path[_i+1];   // 타일 사이 위치 보간(진행도)
+      if(_nx&&COORDS[_nx]){const _p=Math.max(0,Math.min(1,a.moveProg||0));x+=(COORDS[_nx][0]-x)*_p;y+=(COORDS[_nx][1]-y)*_p;}}
     const idx=others.indexOf(a), off=others.length>1?(idx-(others.length-1)/2)*26:0;
     const ax=x+off,ay=y-2;
     const sel = state.selected?.kind==="army"&&state.selected.id===a.id;

@@ -56,6 +56,9 @@
     병원:{icon:"🏥",cost:{목재:10,석재:8,철:6},res:null} };
   const UNIV_COST={목재:25,석재:20,철:15};
   const GROUPS={보병:["중갑보병","창병"],궁병:["장궁병","석궁병"],기병:["경기병","중기병"]};
+  // ---- 시간 기반 이동 속도: 병종 그룹별 타일 1칸 통과 소요 틱(작을수록 빠름). 섞이면 그룹 단순 평균. ----
+  const MOVE_TICKS={보병:4,궁병:3,기병:2};
+  const UNIT_GROUP={}; for(const grp in GROUPS) for(const u of GROUPS[grp]) UNIT_GROUP[u]=grp;
   const STATNAME={atk:"공격",df:"방어",hp:"체력"};
   const AI={budgetPerTurn:3,waveSize:30,homeCap:52,tierEvery:18,waveCap:2,waveFrac:0.75}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
 
@@ -259,23 +262,48 @@
     if(sides.length===1){const s=sides[0];NODES.ANCIENT.owner=s; if(R.holder===s)R.holdTurns++;else{R.holder=s;R.holdTurns=1;}}
     else{R.holder=null;R.holdTurns=0;}
   }
-  // 이동 확정: army를 target으로 옮기고(비용 차감) 적이 있으면 교전. {battle} 반환.
-  function executeMove(g,armyId,target,cost){
-    const a=findArmy(g,armyId); if(!a)return{battle:null}; a.node=target; a.mp-=cost;
-    let battle=null;
-    if(target==="P"&&a.side==="E") battle=defendCastle(g,a);   // 성 수비: 주둔군이 부대 없이도 자동 방어
-    else { const enemy=armiesAt(g,target).find(x=>x.side!==a.side); if(enemy) battle=resolveBattle(g,a,enemy,target); }
-    checkVictory(g); return {battle};
-  }
-  // AI/봇 공용: mp만큼 target 방향 전진, 접촉 시 교전
-  function marchToward(g,army,target){
-    const {dist,prev}=dijkstra(army.node,99); if(dist[target]===undefined)return null;
-    const full=pathTo(target,prev); let acc=0,dest=army.node,hit=false;
-    for(let k=1;k<full.length;k++){const c=ADJ[full[k-1]].find(n=>n.to===full[k]).cost; if(acc+c>army.maxMp)break; acc+=c; dest=full[k];
-      if(armiesAt(g,dest).some(x=>x.side!==army.side)){hit=true;break;}}
-    if(dest===army.node)return null;
-    const r=executeMove(g,army.id,dest,acc); return r.battle;
-  }
+  // ---- 시간 기반 이동 (mp 대체) ----
+  // 부대 속도: comp에 존재하는 병종 그룹들의 MOVE_TICKS 단순 평균 → 틱당 진행도(1/틱).
+  function armyTicksPerTile(a){ const gs=new Set();
+    for(const k in a.comp){ if(a.comp[k]>0){ const grp=UNIT_GROUP[baseOf(k)]; if(grp)gs.add(grp); } }
+    if(!gs.size) return MOVE_TICKS.보병;
+    let s=0; for(const grp of gs) s+=MOVE_TICKS[grp]; return s/gs.size; }
+  function armySpeed(g,a){ let t=armyTicksPerTile(a);
+    if(a.side==="P" && hasR(g,"행군술")) t=Math.max(1,t-1);   // 행군술: 통과 1틱 단축(구 이동력+1 재활용)
+    return 1/t; }
+  // 목적지 지정: 부대가 여러 틱에 걸쳐 스스로 이동. 동일 목적지면 진행도 보존.
+  function orderMove(g,armyId,dest){ const a=findArmy(g,armyId); if(!a)return"부대 없음";
+    if(dest===a.node){ a.dest=null; a.path=null; a.moveProg=0; return null; }
+    if(a.dest===dest && a.path) return null;
+    const {dist,prev}=dijkstra(a.node,99); if(dist[dest]===undefined) return"도달 불가";
+    a.dest=dest; a.path=pathTo(dest,prev); a.moveProg=0; return null; }
+  function stopMove(g,armyId){ const a=findArmy(g,armyId); if(a){a.dest=null;a.path=null;a.moveProg=0;} }
+  // 한 칸 진입 + 교전 해결. {battle} 반환.
+  function enterTile(g,a,next){ a.node=next; let battle=null;
+    if(next==="P"&&a.side==="E") battle=defendCastle(g,a);          // 성 수비: 주둔군 자동 방어
+    else { const enemy=armiesAt(g,next).find(x=>x.side!==a.side); if(enemy) battle=resolveBattle(g,a,enemy,next); }
+    checkVictory(g); return {battle}; }
+  // 매 틱: 이동 중인 모든 부대를 speed 만큼 전진(엣지 비용만큼 차면 한 칸). 접촉 시 교전(정지). 마지막 전투 반환.
+  function moveTick(g){ let battle=null;
+    for(const a of [...g.armies]){ if(g.over) break;
+      if(!g.armies.includes(a)) continue;                          // 이미 제거됨
+      if(!a.dest || a.node===a.dest){ if(a.dest){a.dest=null;a.path=null;} continue; }
+      if(!a.path || a.path[0]!==a.node){                           // 경로 재계산(위치 어긋남)
+        const {dist,prev}=dijkstra(a.node,99); if(dist[a.dest]===undefined){stopMove(g,a.id);continue;} a.path=pathTo(a.dest,prev); a.moveProg=0; }
+      a.moveProg=(a.moveProg||0)+armySpeed(g,a);
+      let guard=0;
+      while(a.node!==a.dest && guard++<50){
+        const idx=a.path.indexOf(a.node), next=a.path[idx+1]; if(!next){stopMove(g,a.id);break;}
+        const cost=(ADJ[a.node].find(n=>n.to===next)||{cost:1}).cost;
+        if(a.moveProg<cost) break;                                 // 다음 타일 아직 못 감
+        a.moveProg-=cost;
+        const r=enterTile(g,a,next);
+        if(r.battle){ battle=r.battle; stopMove(g,a.id); break; }  // 접촉 전투 → 이동 정지
+        if(!g.armies.includes(a)) break;                           // 전투로 제거됨
+        if(a.node===a.dest){ stopMove(g,a.id); break; }
+      }
+    }
+    return battle; }
 
   // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
   const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
@@ -332,16 +360,14 @@
     if(d>0&&(cur>=avail||tot>=ARMY_CAP))return; const nv=Math.max(0,Math.min(avail,cur+d)); if(nv===0)delete draft[u];else draft[u]=nv;}
   function makeArmyFromDraft(g){const draft=g.castle.draft,comp={};
     for(const u in draft){comp[u]=draft[u];g.castle.garrison[u]-=draft[u];if(g.castle.garrison[u]<=0)delete g.castle.garrison[u];}
-    const army={id:newId(g,"P"),side:"P",node:"P",mp:pBaseMp(g),maxMp:pBaseMp(g),name:(g.armies.filter(a=>a.side==="P").length+1)+"군",comp,hero:null};
+    const army={id:newId(g,"P"),side:"P",node:"P",mp:pBaseMp(g),maxMp:pBaseMp(g),name:(g.armies.filter(a=>a.side==="P").length+1)+"군",comp,hero:null,dest:null,moveProg:0};
     g.armies.push(army); g.castle.draft={}; return army;}
   function deploy(g){if(Object.values(g.castle.draft).reduce((x,y)=>x+y,0)<=0)return null; if(!canAddArmy(g))return null; return makeArmyFromDraft(g);}
-  // deployTo: 성에 출전 후 target 방면 최대 전진 지점을 stage 로 반환 {army, stage:{target,cost,attack}|null}
-  function deployTo(g,target){if(Object.values(g.castle.draft).reduce((x,y)=>x+y,0)<=0||!canAddArmy(g))return{army:null,stage:null};
-    const army=makeArmyFromDraft(g); let stage=null;
-    if(target!=="P"){const{prev}=dijkstra("P",99),full=pathTo(target,prev);let acc=0,dest="P";
-      for(let k=1;k<full.length;k++){const c=ADJ[full[k-1]].find(n=>n.to===full[k]).cost;if(acc+c>army.mp)break;acc+=c;dest=full[k];}
-      if(dest!=="P")stage={target:dest,cost:acc,attack:armiesAt(g,dest).some(x=>x.side!=="P")};}
-    return {army,stage};}
+  // deployTo: 성에서 출전 후 target 방면으로 목적지 지정(부대가 여러 틱에 걸쳐 이동). {army, target} 반환.
+  function deployTo(g,target){if(Object.values(g.castle.draft).reduce((x,y)=>x+y,0)<=0||!canAddArmy(g))return{army:null,target:null};
+    const army=makeArmyFromDraft(g);
+    if(target!=="P") orderMove(g,army.id,target);
+    return {army, target:(target!=="P"&&army.dest)?target:null};}
   function disband(g,id){const a=findArmy(g,id);if(!a||a.node!=="P")return"성에서만 귀환 가능";
     for(const u in a.comp)g.castle.garrison[u]=(g.castle.garrison[u]||0)+a.comp[u]; if(a.hero)heroById(g,a.hero).loc="idle"; removeArmy(g,a); return null;}
 
@@ -372,9 +398,8 @@
       if(bossAlive&&!raiding&&troops(home)>=40) detach(g,home,Math.floor(troops(home)*0.7),"적 레이드대","attack","ANCIENT");
       else if(troops(home)>=AI.waveSize) detach(g,home,Math.floor(troops(home)*(AI.waveFrac||0.7)),"적 원정대","attack",pickAITarget(g));
     }
-    let battle=null;
-    for(const e of g.armies.filter(a=>a.side==="E"&&a.role==="attack")){if(g.over)break;const b=marchToward(g,e,e.target||"P");if(b)battle=b;}
-    return battle;
+    for(const e of g.armies.filter(a=>a.side==="E"&&a.role==="attack")){ orderMove(g,e.id,e.target||"P"); }   // 목적지만 지정, 이동은 moveTick
+    return null;
   }
 
   // ---- 온보딩 퀘스트 (초반 빌드 가이드 겸 튜토리얼) ----
@@ -414,9 +439,9 @@
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){built=g.castle.build.label;completeBuild(g,g.castle.build);g.castle.build=null;}}   // 건설 진행
     let heal=(g.castle.econ["병원"]||0)*3;
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
-    const enemyBattle=aiTurn(g);
+    aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
+    const enemyBattle=moveTick(g);   // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투
     raidTick(g);
-    g.armies.forEach(a=>{if(a.side==="P")a.mp=a.maxMp;});
     g.turn++; tavernTick(g); processRespawns(g); checkVictory(g);
     const questsCompleted=questTick(g);
     return {enemyBattle, built, questsCompleted};
@@ -428,7 +453,8 @@
     ARMY_SLOTS_BASE,ARMY_SLOTS_MAX,pArmyCount,armySlots,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
-    compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,executeMove,marchToward,
+    compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
+    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,
     produce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };

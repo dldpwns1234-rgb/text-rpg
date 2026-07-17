@@ -160,7 +160,7 @@ function renderPanel(){
   } else if(s?.kind==="army"){
     const a=A(s.id);
     h+=`<h3>${a.side==="P"?"⚔ ":"✕ "}${a.name}</h3>`;
-    h+=`<div class="k">위치 ${NODES[a.node].name} · 이동력 ${a.mp}/${a.maxMp} · 병력 ${troops(a)}</div>`;
+    h+=`<div class="k">위치 ${NODES[a.node].name} · 속도 ${Game.armyTicksPerTile(a)}틱/타일 · 병력 ${troops(a)}${a.dest?` · 🚩 <span style="color:var(--gold)">${NODES[a.dest].name} 이동 중</span>`:""}</div>`;
     h+=`<div class="k" style="font-size:12px">편성: ${Object.entries(a.comp).map(([k,v])=>`${unitLabel(k)} ${v}`).join(", ")||"—"}</div>`;
     const g=gatherOf(a); if(g)h+=`<div style="color:var(--green)">⛏ 채집 중: ${g.res} +${g.amt}/턴</div>`;
     if(a.hero){const hero=heroById(a.hero);
@@ -250,41 +250,33 @@ function attach(){
     const a=A(g.dataset.army), sel=state.selected?.kind==="army"?A(state.selected.id):null;
     // 아군 부대 선택 중 다른 노드 클릭(아군 토큰 포함) → 그 노드로 이동 예약
     if(sel && sel.side==="P" && a.node!==sel.node){
-      const {dist}=dijkstra(sel.node,sel.mp);
+      const {dist}=dijkstra(sel.node,99);
       if(dist[a.node]!==undefined){ stageMove(a.node); return; }
     }
     state.pendingMove=null; state.selected={kind:"army",id:a.id}; render();});
   svg.querySelectorAll('[data-go]').forEach(c=>c.onclick=e=>{e.stopPropagation();stageMove(c.dataset.go);});
   svg.querySelectorAll('[data-node]').forEach(c=>c.onclick=e=>{e.stopPropagation();
     const sel=state.selected?.kind==="army"?A(state.selected.id):null;
-    if(sel && sel.side==="P"){ const {dist}=dijkstra(sel.node,sel.mp);
+    if(sel && sel.side==="P"){ const {dist}=dijkstra(sel.node,99);
       if(dist[c.dataset.node]!==undefined && c.dataset.node!==sel.node){ stageMove(c.dataset.node); return; } }
     state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node};render();});
 }
-function stageMove(target){ // 1단계: 이동 예약 (확정 전엔 안 움직임)
+function stageMove(target){ // 1단계: 목적지 미리보기 (확정 전엔 명령 안 내림)
   if(state.over) return;
   const a=A(state.selected?.id); if(!a) return;
-  const {dist,prev}=dijkstra(a.node,a.mp);
-  if(dist[target]===undefined||target===a.node){toast("이동력 부족");return;}
+  const {dist,prev}=dijkstra(a.node,99);
+  if(dist[target]===undefined||target===a.node){toast("도달 불가");return;}
   state.pendingMove={armyId:a.id,target,path:pathTo(target,prev),cost:dist[target],
     attack:armiesAt(target).some(x=>x.side!=="P")};
   render();
 }
-function confirmMove(){ // 2단계: 확정 → 실제 이동 (도착 노드에 적이 있으면 전투)
+function confirmMove(){ // 2단계: 확정 → 진군 명령. 부대가 여러 틱에 걸쳐 스스로 이동(▶ 재생/한 틱).
   const pm=state.pendingMove; if(!pm||state.over) return;
-  const a=A(pm.armyId), path=pm.path, cost=pm.cost, target=pm.target; state.pendingMove=null; state.mode="normal";
-  let i=0;
-  const step=()=>{ i++;
-    if(i<path.length){ a.node=path[i]; render(); setTimeout(step,170); }
-    else {
-      const r=Game.executeMove(state,pm.armyId,target,cost);
-      state.selected=null;   // 이동 완료 후 선택 해제
-      render();
-      if(r.battle) showBattleModal(r.battle);
-      if(state.over) endGame();
-    }
-  };
-  step();
+  const m=Game.orderMove(state,pm.armyId,pm.target);
+  state.pendingMove=null; state.mode="normal";
+  if(!m) state.selected=null;   // 명령 성공 → 선택 해제(도달 타일 하이라이트 끔)
+  toast(m||`🚩 ${NODES[pm.target].name} 방면 진군 — ▶ 재생으로 시간을 흘려 이동`);
+  render();
 }
 function cancelMove(){ state.pendingMove=null; state.mode="normal"; render(); }
 function renderMoveConfirm(){ // 상단엔 안내만, 확정 버튼은 지도 노드 옆 팝업
@@ -317,9 +309,8 @@ function composerHTML(){ // 재사용: 주둔군 → 출전 편성 UI (버튼은
 }
 function deploy(){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const army=Game.deploy(state); if(army){state.selected={kind:"army",id:army.id};state.mode="normal";toast(`${army.name} 성에 출전!`);} render();}
 function deployTo(target){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const r=Game.deployTo(state,target); if(!r.army){toast("편성된 병력이 없습니다");return;}
-  state.selected={kind:"army",id:r.army.id};
-  if(r.stage){const {prev}=dijkstra("P",99); state.pendingMove={armyId:r.army.id,target:r.stage.target,path:pathTo(r.stage.target,prev),cost:r.stage.cost,attack:r.stage.attack};}
-  toast(`${r.army.name} 출전 → ${NODES[target].name} 방면`); render();}
+  state.selected = r.target ? null : {kind:"army",id:r.army.id};   // 진군 명령이면 선택 해제
+  toast(r.target?`${r.army.name} 출전 → ${NODES[target].name} 방면 진군 (▶ 재생으로 이동)`:`${r.army.name} 성에 출전!`); render();}
 function disband(id){const m=Game.disband(state,id); if(m){toast(m);return;} state.selected={kind:"node",id:"P"}; toast("부대 귀환 — 병력이 주둔군에 합류"); render();}
 function buildEcon(k){const m=Game.buildEcon(state,k); toast(m||`🏗 ${k} 레벨업 시작`); render();}
 function buildUniversity(){const m=Game.buildUniversity(state); toast(m||"🏗 대학 건설 시작"); render();}
@@ -400,7 +391,7 @@ function stepTurn(){
 }
 // 실시간 상태(UI 전용, 저장 안 함). 기본 일시정지 — 플레이어가 첫 수를 두고 ▶ 재생.
 let rtPaused=true, rtSpeed=1, rtTimer=null;
-const RT_BASE=1100;   // 1x 틱 간격(ms)
+const RT_BASE=2500;   // 1x 틱 간격(ms). 클릭 기반 조작에 여유를 주려 느긋하게(배속 2x=1.25s·4x=0.625s).
 function rtStop(){ rtPaused=true; if(rtTimer){clearInterval(rtTimer);rtTimer=null;} rtSync(); }
 function rtPause(){ rtStop(); }
 function rtPlay(){ if(state.over)return; rtPaused=false; if(rtTimer)clearInterval(rtTimer);

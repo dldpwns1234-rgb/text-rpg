@@ -23,7 +23,7 @@ function botTurn(g){
   }
   // 1) 채집: 워커를 가장 부족한 자원지로
   const scarce=[...Game.RES].sort((a,b)=>g.res[a]-g.res[b]);
-  gth.forEach((w,i)=>{const dest=RESNODE[scarce[i%Game.RES.length]];w.goal="gather:"+dest;if(w.node!==dest)Game.marchToward(g,w,dest);});
+  gth.forEach((w,i)=>{const dest=RESNODE[scarce[i%Game.RES.length]];w.goal="gather:"+dest;if(w.node!==dest)Game.orderMove(g,w.id,dest);});
   if(g.over)return;
   // 1.2) 내정 영웅 성 배치(생산속도 +1) + 연구(대장간→영농→채굴법, 병렬)
   const ch=g.heroes.find(h=>h.type==="내정"); if(ch&&ch.loc!=="castle")Game.assignHero(g,ch.id,"castle");
@@ -51,10 +51,10 @@ function botTurn(g){
     if(army){ army.goal="attack"; const h=g.heroes.find(h=>h.type==="전투"&&h.loc==="idle"); if(h){h.loc=army.id;army.hero=h.id;} }
     else g.castle.draft={};
   }
-  for(const a of g.armies.filter(a=>a.side==="P"&&a.goal==="attack")){if(g.over)break;Game.marchToward(g,a,"E");}
+  for(const a of g.armies.filter(a=>a.side==="P"&&a.goal==="attack")){if(g.over)break;Game.orderMove(g,a.id,"E");}
 }
 
-function runGame(maxTurns=140){
+function runGame(maxTurns=400){   // 시간 기반 이동으로 게임이 길어짐(틱=초). 컷오프 상향.
   const g=Game.newGame(); const trace=[];
   while(!g.over && g.turn<=maxTurns){
     botTurn(g); if(g.over)break;

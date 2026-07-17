@@ -114,7 +114,7 @@ function renderMap(){
     svg.appendChild(el("circle",{cx:tx,cy:ty,r:27,fill:"none",stroke:"#f59e0b","stroke-width":3}));
   }
   let reach={};
-  if(state.selected?.kind==="army"){const a=A(state.selected.id);if(a?.side==="P")reach=dijkstra(a.node,a.mp).dist;}
+  if(state.selected?.kind==="army"){const a=A(state.selected.id);if(a?.side==="P")reach=dijkstra(a.node,99).dist;}
   for(const id in NODES){
     const n=NODES[id],[x,y]=COORDS[id],r=(n.type==="castle"||n.type==="ancient")?24:18;
     if(reach[id]!==undefined && id!==A(state.selected?.id)?.node)
@@ -140,7 +140,9 @@ function renderMap(){
     if(g>0){const t=el("text",{x,y:y-r-6,class:"gath"});t.textContent=`⛏ +${g}`;svg.appendChild(t);}
   }
   for(const a of state.armies){
-    const[x,y]=COORDS[a.node],others=armiesAt(a.node);
+    let [x,y]=COORDS[a.node]; const others=armiesAt(a.node);
+    if(a.dest&&a.path){const _i=a.path.indexOf(a.node),_nx=a.path[_i+1];   // 노드 사이 위치 보간(진행도)
+      if(_nx&&COORDS[_nx]){const _p=Math.max(0,Math.min(1,a.moveProg||0));x+=(COORDS[_nx][0]-x)*_p;y+=(COORDS[_nx][1]-y)*_p;}}
     const idx=others.indexOf(a), off=others.length>1?(idx-(others.length-1)/2)*26:0;
     const ax=x+off,ay=y-2;
     const sel = state.selected?.kind==="army"&&state.selected.id===a.id;
