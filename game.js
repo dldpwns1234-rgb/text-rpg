@@ -553,11 +553,22 @@
     {id:"m4",name:"지역의 패자",   need:650, reward:{식량:100,목재:80,철:60},                       desc:"국력 650 — 주변에 이름이 알려지다."},
     {id:"m5",name:"왕국의 전설",   need:900, reward:{식량:150,목재:120,석재:100,철:100}, unlock:"slot", desc:"국력 900 — 운용 부대 수 상한 +1 (추가)."},
   ];
+  // 5단계 이후엔 "왕국 칭호" 순환으로 무한히 이어짐 — 마일스톤이 끝나 "다음 목표"가 사라지는 엔드게임 절벽 방지.
+  // need는 직전 값에서 ×1.4씩(지수 성장, 국력 증가 속도를 앞질러 자연히 간격이 벌어짐), 보상도 회차만큼 커짐.
+  const TITLES=["남작","자작","백작","후작","공작","대공","왕"];
+  function proceduralMilestone(idx){
+    const n=idx-MILESTONES.length, last=MILESTONES[MILESTONES.length-1];
+    const need=Math.round(last.need*Math.pow(1.4,n+1));
+    const cycle=Math.floor(n/TITLES.length)+1, title=TITLES[n%TITLES.length]+(cycle>1?` ${cycle}기`:"");
+    const amt=Math.round(40*(1+n*0.5)), reward=Object.fromEntries(RES.map(r=>[r,amt]));
+    return {id:"title"+idx, name:`${title} 즉위`, need, reward, desc:`국력 ${need} — 왕국이 ${title}의 반열에 올랐다.`};
+  }
+  const milestoneAt=idx=>idx<MILESTONES.length ? MILESTONES[idx] : proceduralMilestone(idx);
   function milestoneTick(g){
     if(!g.milestones) g.milestones={done:[],idx:0,unlocked:[]};
     const completed=[], might=computeMight(g);
-    while(g.milestones.idx<MILESTONES.length){
-      const m=MILESTONES[g.milestones.idx]; if(might<m.need) break;
+    while(true){
+      const m=milestoneAt(g.milestones.idx); if(might<m.need) break;
       g.milestones.done.push(m.id);
       if(m.reward) for(const r in m.reward) g.res[r]=(g.res[r]||0)+m.reward[r];
       if(m.unlock) g.milestones.unlocked.push(m.unlock);
@@ -610,7 +621,7 @@
     TIER_MAX,TIER_NAME,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
-    computeMight,enemyMight,MILESTONES,milestoneTick,offlineTick,monsterScale,FACTIONS,
+    computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,

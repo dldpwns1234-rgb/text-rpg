@@ -17,9 +17,8 @@ function renderResBar(){
 }
 // 🏅 다음 마일스톤(A2) — 국력 진행바. 전부 달성하면 숨김.
 function renderMilestone(){
-  const MS=Game.MILESTONES, ms=state.milestones||{idx:0};
-  if(!MS||ms.idx>=MS.length) return "";
-  const cur=MS[ms.idx], might=Game.computeMight(state), pct=Math.min(100,Math.round(100*might/cur.need));
+  const ms=state.milestones||{idx:0};
+  const cur=Game.milestoneAt(ms.idx), might=Game.computeMight(state), pct=Math.min(100,Math.round(100*might/cur.need));
   const rw=cur.reward&&Object.keys(cur.reward).length?Object.entries(cur.reward).map(([r,v])=>`${r[0]}+${v}`).join(" "):"";
   return `<div style="background:var(--bg);border:1px solid var(--blue);border-radius:10px;padding:8px 10px;margin-bottom:10px">
     <div style="font-size:11px;color:var(--blue)">🏅 다음 마일스톤 <b>${cur.name}</b> <span class="k">(국력 ${might}/${cur.need})</span></div>
