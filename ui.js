@@ -14,9 +14,22 @@ function renderResBar(){
     +`<span class="res" style="border-color:#fbbf24;color:#fbbf24">📜 경험치 <b>${state.xpItems||0}</b></span>`;
   document.getElementById('turn').textContent=state.turn;
 }
+// 🎯 온보딩 퀘스트 — 현재 목표를 패널 최상단에 상시 표시(선택 상태 무관). 데이터는 Game.QUESTS.
+function renderQuests(){
+  const Q=Game.QUESTS, q=state.quests||{idx:0};
+  if(!Q||q.idx>=Q.length) return "";   // 전부 완료 → 숨김
+  const cur=Q[q.idx];
+  const rw=cur.reward?Object.entries(cur.reward).map(([r,v])=>`${r[0]}+${v}`).join(" "):"";
+  return `<div style="background:var(--bg);border:1px solid var(--gold);border-radius:10px;padding:8px 10px;margin-bottom:10px">
+    <div style="font-size:11px;color:var(--gold)">🎯 목표 <b>${q.idx+1} / ${Q.length}</b></div>
+    <div style="font-weight:700;margin:2px 0">${cur.name}</div>
+    <div class="k" style="font-size:12px">${cur.desc}</div>
+    ${rw?`<div style="font-size:11px;color:var(--green);margin-top:3px">✦ 보상 ${rw}</div>`:""}
+  </div>`;
+}
 function renderPanel(){
   const p=document.getElementById('panel'); const s=state.selected;
-  let h="";
+  let h=renderQuests();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
     const tab=state.castleTab||"건물"; const busy=!!c.build;
@@ -338,7 +351,7 @@ function showBattleModal(sum){
     <button class="minibtn" id="modalClose">확인</button>`);
 }
 function endGame(){
-  state.over=true; document.getElementById('endturn').disabled=true;
+  state.over=true; if(typeof rtStop==="function")rtStop(); document.getElementById('endturn').disabled=true;
   const win=state.winner==="P", raid=state.winBy==="raid";
   const msg = win ? (raid?"고대성을 수성해 레이드 승리!":"적 수도를 함락했습니다.")
                   : (raid?"적이 고대성 레이드를 완성했습니다.":"수도를 빼앗겼습니다.");
@@ -352,9 +365,12 @@ function endGame(){
 const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier"];
 function saveSnapshot(){const o={...state,ancientOwner:NODES.ANCIENT.owner};for(const f of UI_FIELDS)delete o[f];return JSON.parse(JSON.stringify(o));}
 function applySave(data){
+  if(typeof rtStop==="function")rtStop();   // 로드/새게임 시 실시간 루프 정지
+  hideModal();                              // 열려있던 전투/종료 모달 닫기
   for(const k in state){if(!UI_FIELDS.includes(k))delete state[k];}
   Object.assign(state,data); NODES.ANCIENT.owner=data.ancientOwner!==undefined?data.ancientOwner:null; delete state.ancientOwner;
   state.selected=null;state.pendingMove=null;state.mode="normal"; state.castleTab=state.castleTab||"건물"; state.prodTier=state.prodTier||{};
+  state.quests=state.quests||{done:[],idx:0};   // 구버전 세이브 호환
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}
@@ -370,17 +386,45 @@ document.getElementById('importBtn').onclick=()=>document.getElementById('import
 document.getElementById('importFile').onchange=e=>{if(e.target.files[0])importFile(e.target.files[0]);e.target.value="";};
 document.getElementById('newBtn').onclick=newGameReset;
 
-/* ===== 턴 ===== */
-document.getElementById('endturn').onclick=()=>{
+/* ===== 턴 / 실시간 루프 (일시정지 가능) ===== */
+// 한 틱 = endTurn + 렌더 + 저장 + 사건 처리. 수동 버튼과 실시간 루프가 공유(단일 소스).
+function stepTurn(){
   if(state.over) return;
   const r=Game.endTurn(state);
-  render(); saveLocal(true);   // 매 턴 자동 저장
-  if(r.enemyBattle) showBattleModal(r.enemyBattle);
-  if(state.over) endGame();
+  render(); saveLocal(true);   // 매 틱 자동 저장
+  if(r.enemyBattle){ rtPause(); showBattleModal(r.enemyBattle); }   // 전투 → 자동 일시정지 + 관전
+  if(state.over){ endGame(); return; }
+  else if(r.questsCompleted&&r.questsCompleted.length) toast(`🎯 목표 달성: ${r.questsCompleted[r.questsCompleted.length-1].name}!`);
   else if(r.built) toast(`🏗 ${r.built} 완성!`);
-  else if(!r.enemyBattle) toast("새 턴 — 수입 정산·생산 완료");
-};
+  else if(!r.enemyBattle) toast("⏱ 시간 경과 — 수입·생산 정산");
+}
+// 실시간 상태(UI 전용, 저장 안 함). 기본 일시정지 — 플레이어가 첫 수를 두고 ▶ 재생.
+let rtPaused=true, rtSpeed=1, rtTimer=null;
+const RT_BASE=1100;   // 1x 틱 간격(ms)
+function rtStop(){ rtPaused=true; if(rtTimer){clearInterval(rtTimer);rtTimer=null;} rtSync(); }
+function rtPause(){ rtStop(); }
+function rtPlay(){ if(state.over)return; rtPaused=false; if(rtTimer)clearInterval(rtTimer);
+  rtTimer=setInterval(()=>{ if(!rtPaused&&!state.over) stepTurn(); }, RT_BASE/rtSpeed); rtSync(); }
+function rtToggle(){ rtPaused?rtPlay():rtPause(); }
+function rtSetSpeed(s){ rtSpeed=s; if(!rtPaused)rtPlay(); rtSync(); }   // 재생 중이면 재시작으로 간격 반영
+function rtSync(){ const pb=document.getElementById('rtPlay'); if(!pb)return;
+  pb.textContent=rtPaused?"▶ 재생":"⏸ 일시정지";
+  pb.style.background=rtPaused?"":"var(--green)"; pb.style.color=rtPaused?"":"#04240f";
+  document.querySelectorAll('.rtspeed').forEach(b=>{const on=+b.dataset.spd===rtSpeed;
+    b.style.background=on?'var(--gold)':''; b.style.color=on?'#04240f':''; b.style.borderColor=on?'var(--gold)':'';});
+}
+// 컨트롤 주입 (템플릿 무수정): #endturn 앞에 ▶재생/배속 삽입, #endturn 은 "수동 한 틱".
+(function(){ const et=document.getElementById('endturn'); if(!et)return;
+  et.textContent="⏭ 한 틱"; et.title="수동으로 한 틱 진행(일시정지 중 유용)";
+  const w=document.createElement('span'); w.style.cssText="display:flex;gap:3px;align-items:center";
+  w.innerHTML=`<button id="rtPlay" title="시간 재생/일시정지">▶ 재생</button>`
+    +[1,2,4].map(s=>`<button class="rtspeed minibtn" data-spd="${s}" title="배속 ${s}x">${s}x</button>`).join("");
+  et.parentNode.insertBefore(w, et);
+  document.getElementById('rtPlay').onclick=rtToggle;
+  w.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>rtSetSpeed(+b.dataset.spd));
+})();
+document.getElementById('endturn').onclick=stepTurn;
 document.getElementById('castleBtn').onclick=()=>{state.pendingMove=null;state.selected={kind:"node",id:"P"};render();};
 svg.addEventListener('click',()=>{state.selected=null;state.pendingMove=null;state.mode="normal";render();});
-render();
-try{ if(localStorage.getItem(SAVE_KEY)) toast("이전 저장 있음 — 📂 눌러 이어하기"); }catch(e){}
+render(); rtSync();
+try{ if(localStorage.getItem(SAVE_KEY)) toast("이전 저장 있음 — 📂 눌러 이어하기 · ▶ 재생으로 시간 시작"); }catch(e){}

@@ -8,7 +8,8 @@
    ===================================================================== */
 'use strict';
 
-const CONST = { FLOOR:0.15, FALLBACK:0.85, SPEC_MULT:1.4, SPLIT:0.6, COUNTER_MULT:2.0, HERO_BUFF:0.20 };
+const CONST = { FLOOR:0.15, FALLBACK:0.85, SPEC_MULT:1.4, SPLIT:0.6, COUNTER_MULT:2.0, HERO_BUFF:0.20,
+  BATTLE_ROUNDS:40 };  // 게임·검증 공용 전투 라운드 캡. HP×1.0에서 전투는 ~30R에 결착 → 40R이면 무승부 소멸. game.js/verify.js가 이 값을 참조(드리프트 방지).
 
 const UNITS = {
   "중갑보병":{hp:120,atk:8, df:12,proc:0.0, row:"front",kind:"tank",  desc:"방어 탱커"},
@@ -131,7 +132,7 @@ function simulate(compA,heroA,compB,heroB,maxRounds,modsA,modsB){
 /* 검증용: 가벼운 승패 + 승률 */
 function battle(compA,heroA,compB,heroB,maxRounds){ return simulate(compA,heroA,compB,heroB,maxRounds).w; }
 function winrate(compA,compB,opts){
-  opts=opts||{}; const t=opts.trials||500, mr=opts.maxRounds||100, hA=!!opts.heroA, hB=!!opts.heroB;
+  opts=opts||{}; const t=opts.trials||500, mr=opts.maxRounds||CONST.BATTLE_ROUNDS, hA=!!opts.heroA, hB=!!opts.heroB;
   let w=0; for(let i=0;i<t;i++) if(battle(compA,hA,compB,hB,mr)==="A") w++; return w/t;
 }
 

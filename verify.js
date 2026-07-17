@@ -2,9 +2,12 @@
    mini4x 밸런스 자동 검증 하네스
    실행:  node verify.js
    engine.js 의 수치를 고친 뒤 이걸 돌리면 삼각·카운터가 유지되는지 즉시 확인.
+   ★ 실제 게임과 같은 라운드 캡(CONST.BATTLE_ROUNDS)으로 검증한다. game.js 의 HP_SCALE=1.0
+     (항등)이므로 이 검증 = 실제 게임 전투. 검증≠게임 드리프트 방지(과거 HP×1.4/28R 사고).
    ===================================================================== */
 const E = require("./engine.js");
 const { winrate, simulate } = E;
+const R = E.CONST.BATTLE_ROUNDS;  // 실제 게임 캡
 const NAMES = E.NAMES.filter(n => !E.UNITS[n].monster); // 코어 6종만 밸런스 검증
 
 let pass=0, fail=0;
@@ -47,7 +50,7 @@ const protA=[{name:"중갑보병",count:6,tier:1},{name:"창병",count:10,tier:1
 const protB=[{name:"중기병",count:20,tier:1}];
 let sumLoss=0, N=200;
 for(let i=0;i<N;i++){
-  const last=simulate(protA,false,protB,false,100).frames.slice(-1)[0];
+  const last=simulate(protA,false,protB,false,R).frames.slice(-1)[0];
   const sp=last.A.find(s=>s.name==="창병");
   if(sp) sumLoss += (sp.init-sp.alive)/sp.init;
 }

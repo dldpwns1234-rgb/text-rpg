@@ -8,8 +8,10 @@
 (function(global){
   "use strict";
   const E = (typeof module!=="undefined" && module.exports) ? require("./engine.js")
-          : { UNITS: global.UNITS || UNITS, simulate: global.simulate || simulate };
+          : { UNITS: global.UNITS || UNITS, simulate: global.simulate || simulate,
+              CONST: (global.Engine&&global.Engine.CONST) || (typeof CONST!=="undefined"?CONST:null) };
   const UNITS = E.UNITS, simulate = E.simulate;
+  const BATTLE_ROUNDS = (E.CONST && E.CONST.BATTLE_ROUNDS) || 40;  // 전투 라운드 캡(엔진 공유 상수). 브라우저 폴백 40.
   let API;  // 하단에서 채움. setMap 이 맵 교체 시 노출 참조를 갱신하는 데 필요(TDZ 회피).
 
   // ---- 상수 ----
@@ -20,7 +22,7 @@
   const XP_REWARD={사냥:1,토벌:2,레이드:3};      // 몬스터 처치 → 경험치 아이템
   const PROMOTE_COST={1:2,2:4};                  // ★1→2 : 2, ★2→3 : 4 (경험치 아이템)
   const wallCost=lv=>({석재:25+lv*20,철:5+lv*4}); // 성벽 보강(반복형 석재 소비처) — 수성 방어↑
-  const HERO_BUFF=0.20, HP_SCALE=1.4;
+  const HERO_BUFF=0.20, HP_SCALE=1.0;  // HP 전역 배율. 1.4는 티어테스트 잔재로 삼각(기병>궁병)을 깨뜨려 1.0으로 정정(§7). 1.0=항등 → 실제 전투가 verify.js 검증 조건과 일치.
   // ---- 영웅 등급(★1~3): 등급이 버프 세기 결정 ----
   const GRADE_BUFF={1:0.15,2:0.20,3:0.28}, GRADE_GATHER={1:1.4,2:1.5,3:1.7};
   // ---- 선술집 · 토벌 점수 ----
@@ -131,6 +133,7 @@
     castle:{level:1,queue:[],buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
     raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
+    quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -203,7 +206,7 @@
     const modsA=mergeMods(attacker.side==="P"?researchMods(g):null,HP_MODS);
     const modsB=mergeMods(defender.side==="P"?researchMods(g):null,HP_MODS);
     const beforeA={...attacker.comp},beforeB={...defender.comp};
-    const res=simulate(compArr(attacker),aB,compArr(defender),dB,28,modsA,modsB);
+    const res=simulate(compArr(attacker),aB,compArr(defender),dB,BATTLE_ROUNDS,modsA,modsB);
     const last=res.frames[res.frames.length-1];
     const rebuild=s=>{const c={};for(const x of last[s])if(x.alive>0)c[x.name]=(c[x.name]||0)+x.alive;return c;};
     const rA=rebuild("A"),rB=rebuild("B");
@@ -374,7 +377,33 @@
     return battle;
   }
 
-  // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패) ----
+  // ---- 온보딩 퀘스트 (초반 빌드 가이드 겸 튜토리얼) ----
+  // 선형 체인. done(g)=상태를 받는 순수 조건 함수. 달성 시 questTick 이 보상 지급 후 다음 목표로.
+  // 데이터는 여기(단일 소스), 표시는 ui.js renderQuests. 시간모델 무관 → 실시간 전환해도 tick 에서 그대로.
+  const QUESTS=[
+    {id:"farm",  name:"터전 다지기", desc:"🌾 농장을 지어 식량 수입을 늘리자.",                reward:{목재:15},       done:g=>(g.castle.econ["농장"]||0)>=1},
+    {id:"gather",name:"첫 채집대",   desc:"⛏ 부대를 자원지(곡창·삼림 등)로 보내 채집을 시작하자.", reward:{목재:15},       done:g=>g.armies.some(a=>a.side==="P"&&NODES[a.node]&&NODES[a.node].type==="resource")},
+    {id:"hunt",  name:"첫 사냥",     desc:"⚔ 약한 둥지(늑대·도적)를 소탕해 경험치를 얻자.",       reward:{철:10},         done:g=>(g.xpItems||0)>=1},
+    {id:"barr",  name:"병종 확장",   desc:"🏹 궁수대나 마구간을 지어 병종을 늘리자.",             reward:{식량:20},       done:g=>g.castle.buildings.includes("궁수대")||g.castle.buildings.includes("마구간")},
+    {id:"univ",  name:"지식의 전당", desc:"🎓 대학을 지어 연구를 해금하자.",                     reward:{목재:10,철:10}, done:g=>g.castle.buildings.includes("대학")},
+    {id:"res",   name:"첫 연구",     desc:"🔬 연구를 하나 완료해 부대를 강화하자.",               reward:{철:15},         done:g=>Object.keys(g.research.done||{}).length>=1},
+    {id:"hero",  name:"영웅 영입",   desc:"🍺 선술집을 짓고 새 영웅을 영입하자.",                 reward:{식량:25},       done:g=>g.heroes.length>=3},
+    {id:"subdue",name:"토벌 원정",   desc:"☠ 강한 둥지(고블린·오크 진지)를 토벌하자.",            reward:{철:20,석재:20}, done:g=>(g.subdue||0)>=1},
+  ];
+  function questTick(g){
+    if(!g.quests) g.quests={done:[],idx:0};
+    const completed=[];
+    while(g.quests.idx<QUESTS.length){
+      const q=QUESTS[g.quests.idx];
+      if(!q.done(g)) break;
+      g.quests.done.push(q.id);
+      if(q.reward) for(const r in q.reward) g.res[r]=(g.res[r]||0)+q.reward[r];
+      g.quests.idx++; completed.push(q);
+    }
+    return completed;
+  }
+
+  // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
   function endTurn(g){
     if(g.over)return{enemyBattle:null};
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
@@ -389,7 +418,8 @@
     raidTick(g);
     g.armies.forEach(a=>{if(a.side==="P")a.mp=a.maxMp;});
     g.turn++; tavernTick(g); processRespawns(g); checkVictory(g);
-    return {enemyBattle, built};
+    const questsCompleted=questTick(g);
+    return {enemyBattle, built, questsCompleted};
   }
 
   API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
@@ -401,6 +431,6 @@
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,executeMove,marchToward,
     produce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
-    playerCounterUnit,pickAIUnit,aiTurn,endTurn };
+    playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
   if(typeof module!=="undefined"&&module.exports) module.exports=API; else global.Game=API;
 })(typeof self!=="undefined"?self:this);
