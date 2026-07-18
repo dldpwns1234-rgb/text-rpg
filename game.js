@@ -21,6 +21,14 @@
   const UPKEEP_RATE=0.2, UPKEEP_FREE=20;  // 식량 유지비: FREE 초과 병력 1당 매턴 소모(대군 소프트 상한). 고갈 시 생산 중단
   const XP_REWARD={사냥:1,토벌:2,레이드:3};      // 몬스터 처치 → 경험치 아이템
   const PROMOTE_COST={1:2,2:4};                  // ★1→2 : 2, ★2→3 : 4 (경험치 아이템)
+  const DRAGON_SCALE_REWARD={사냥:0,토벌:2,레이드:8};   // 몬스터 처치 → 용린(드래곤 전용 육성 자원, C1). 레이드가 크게 줘서 고대성 도전과 자연히 엮임.
+  // 드래곤 단계(퀘스트/마일스톤과 같은 순차 idx 패턴). 알 단계는 buff:0 → 별도 조건문 없이 "전투 참여 못 함"과 동치.
+  const DRAGON_STAGES=[
+    {id:"egg",  name:"알",     need:0,  buff:0,    desc:"용린을 모아 부화시키자."},
+    {id:"hatch",name:"새끼 용", need:20, buff:0.15, desc:"전투 참여 시 버프 +15%"},
+    {id:"juv",  name:"어린 용", need:60, buff:0.35, desc:"전투 참여 시 버프 +35%"},
+    {id:"adult",name:"성체 용", need:140,buff:0.65, desc:"전투 참여 시 버프 +65%"},
+  ];
   const wallCost=lv=>({석재:25+lv*20,철:5+lv*4}); // 성벽 보강(반복형 석재 소비처) — 수성 방어↑
   const HERO_BUFF=0.20, HP_SCALE=1.0;  // HP 전역 배율. 1.4는 티어테스트 잔재로 삼각(기병>궁병)을 깨뜨려 1.0으로 정정(§7). 1.0=항등 → 실제 전투가 verify.js 검증 조건과 일치.
   // ---- 영웅 등급(★1~3): 등급이 버프 세기 결정 ----
@@ -178,6 +186,7 @@
     season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
     factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
     pendingPromote:null,   // 영웅 승급 특성 선택 대기(C2)
+    dragon:{stage:0}, dragonScale:0,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음)
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -264,6 +273,8 @@
     const aHero=hasCombatHero(g,attacker)?heroById(g,attacker.hero):null;
     const dHero=hasCombatHero(g,defender)?heroById(g,defender.hero):null;
     let aB=aHero?GRADE_BUFF[aHero.grade]+traitSum(aHero,"atkBonus"):0, dB=dHero?GRADE_BUFF[dHero.grade]+traitSum(dHero,"defBonus"):0;
+    const dragonBuff=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff;   // 드래곤(C1) — 영웅과 별개로 가산, 알 단계는 0이라 자동 무효
+    if(attacker.dragon) aB+=dragonBuff; if(defender.dragon) dB+=dragonBuff;
     if(fort){ dB+=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22; if(defender.side==="P"&&hasR(g,"축성술"))dB+=0.15; }
     if(node==="P"&&defender.side==="P") dB+=Math.min(wallMaxLv(g)*0.05,(g.castle.wall||0)*0.05);  // 성벽 보강
     if(ancientHold) dB+=0.20;
@@ -280,11 +291,13 @@
     const sum={attacker:attacker.name,defender:defender.name,aSide:attacker.side,fort:fort||ancientHold,w:res.w,survA:res.survA,survB:res.survB,
       heroA:aHero?aHero.name:null,heroB:dHero?dHero.name:null,
       buffA:aHero?Math.round(aB*100):0, buffB:dHero?Math.round(dB*100):0,
-      gradeA:aHero?aHero.grade:0, gradeB:dHero?dHero.grade:0};
+      gradeA:aHero?aHero.grade:0, gradeB:dHero?dHero.grade:0,
+      dragonA:!!attacker.dragon, dragonB:!!defender.dragon, dragonStage:DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].name};
     if(res.w==="A"){ attacker.comp=rA; const wd=wound(attacker,beforeA,rA);
       let rw=""; if(defender.side==="M"&&defender.reward){for(const r in defender.reward)g.res[r]=(g.res[r]||0)+defender.reward[r];rw=" · 보상 "+Object.entries(defender.reward).map(([r,v])=>`${r} +${v}`).join(", ");sum.reward=defender.reward;
         if(defender.mtier&&SUBDUE_REWARD[defender.mtier]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[defender.mtier];sum.subdue=SUBDUE_REWARD[defender.mtier];rw+=` · 토벌점수 +${sum.subdue}`;}
         if(defender.mtier&&XP_REWARD[defender.mtier]){g.xpItems=(g.xpItems||0)+XP_REWARD[defender.mtier];sum.xp=XP_REWARD[defender.mtier];rw+=` · 경험치 +${sum.xp}`;}
+        if(defender.mtier&&DRAGON_SCALE_REWARD[defender.mtier]){g.dragonScale=(g.dragonScale||0)+DRAGON_SCALE_REWARD[defender.mtier];sum.dragonScale=DRAGON_SCALE_REWARD[defender.mtier];rw+=` · 용린 +${sum.dragonScale}`;}
         if(defender.mtier&&defender.mtier!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}
         else if(defender.mtier==="레이드"){   // 월드 보스(B4): 세대(gen)만큼 더 강해져 재등장
           g.raidBossGen=(g.raidBossGen||0)+1;
@@ -297,9 +310,9 @@
     return sum;
   }
   function defendCastle(g,attacker){
-    const defComp={...g.castle.garrison}; const pArmies=armiesAt(g,"P").filter(a=>a.side==="P"); let hero=null;
-    for(const a of pArmies){for(const u in a.comp)defComp[u]=(defComp[u]||0)+a.comp[u]; if(a.hero&&heroById(g,a.hero)?.type==="전투")hero=a.hero;}
-    const defender={side:"P",name:"수도 수비대",comp:defComp,hero};
+    const defComp={...g.castle.garrison}; const pArmies=armiesAt(g,"P").filter(a=>a.side==="P"); let hero=null, dragon=false;
+    for(const a of pArmies){for(const u in a.comp)defComp[u]=(defComp[u]||0)+a.comp[u]; if(a.hero&&heroById(g,a.hero)?.type==="전투")hero=a.hero; if(a.dragon)dragon=true;}
+    const defender={side:"P",name:"수도 수비대",comp:defComp,hero,dragon};
     const sum=resolveBattle(g,attacker,defender,"P");
     if(sum.w==="B"){ g.castle.garrison={...defender.comp}; for(const a of pArmies){if(a.hero)heroById(g,a.hero).loc="castle";removeArmy(g,a);} }
     else { g.castle.garrison={}; for(const a of pArmies){if(a.hero)heroById(g,a.hero).loc="idle";removeArmy(g,a);} }
@@ -456,6 +469,10 @@
     pay(g,r.cost); const ch=cityHero(g), turns=Math.max(1,r.turns-(ch?traitSum(ch,"researchBonus"):0));
     g.research.active={key:k,left:turns}; return null;}
   function assignHero(g,hid,loc){heroById(g,hid).loc=loc; return null;}
+  // 드래곤(C1) 배치: 영웅과 달리 유일 개체라 army.dragon 불리언 플래그 하나로 위치 추적(loc: 부대 id | "idle").
+  function assignDragon(g,loc){ for(const a of g.armies) if(a.dragon) delete a.dragon;
+    if(loc!=="idle"){ const a=findArmy(g,loc); if(a) a.dragon=true; } return null; }
+  const dragonLoc=g=>{const a=g.armies.find(x=>x.dragon); return a?a.id:"idle";};
   const heroEffect=h=>{const base=h.type==="전투"?`전투 참전 시 부대 전투력 +${Math.round(GRADE_BUFF[h.grade]*100)}%`
     :`성 배치: 생산 +${h.grade>=3?2:1} · 자원지 배치: 채집 ×${GRADE_GATHER[h.grade]}`;
     const trs=heroTraits(h); return trs.length?`${base} · ${trs.map(t=>`✦${t.name}: ${t.desc}`).join(" · ")}`:base;};
@@ -622,6 +639,16 @@
     return completed;
   }
 
+  // ---- 드래곤(C1) 단계 진행: 용린 누적에 따라 순차 성장(퀘스트/마일스톤과 같은 패턴) ----
+  function dragonTick(g){
+    if(!g.dragon) g.dragon={stage:0};
+    const completed=[];
+    while(g.dragon.stage<DRAGON_STAGES.length-1 && (g.dragonScale||0)>=DRAGON_STAGES[g.dragon.stage+1].need){
+      g.dragon.stage++; completed.push(DRAGON_STAGES[g.dragon.stage]);
+    }
+    return completed;
+  }
+
   // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
   function endTurn(g){
     if(g.over)return{enemyBattle:null};
@@ -643,7 +670,8 @@
     const worldEvent=mt.event||raidEvent;
     const questsCompleted=questTick(g);
     const msCompleted=milestoneTick(g);
-    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, worldEvent, seasonEvent, factionEvents};
+    const dragonCompleted=dragonTick(g);
+    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, dragonCompleted, worldEvent, seasonEvent, factionEvents};
   }
 
   // ---- 오프라인 누적(A4): 실시각 계산은 ui.js 몫(Date.now()) — 여긴 순수하게 "틱 수"만 받아 진행.
@@ -657,7 +685,7 @@
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){completeBuild(g,g.castle.build);g.castle.build=null;}}
     let heal=(g.castle.econ["병원"]||0)*3;
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
-    g.turn++; tavernTick(g); processRespawns(g); questTick(g); milestoneTick(g);
+    g.turn++; tavernTick(g); processRespawns(g); questTick(g); milestoneTick(g); dragonTick(g);
   }
   function offlineTick(g,ticks){ ticks=Math.max(0,Math.min(ticks|0,OFFLINE_MAX_TICKS));
     const t0=g.turn; for(let i=0;i<ticks;i++) offlineStep(g); return {ticks,turns:g.turn-t0}; }
@@ -667,6 +695,7 @@
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTraits,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
+    DRAGON_STAGES,dragonTick,assignDragon,dragonLoc,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,

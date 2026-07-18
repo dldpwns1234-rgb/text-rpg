@@ -12,7 +12,8 @@ function renderResBar(){
   }).join("")
     +`<span class="res" style="border-color:#c4b5fd;color:#c4b5fd">🏵 토벌 <b>${state.subdue||0}</b></span>`
     +`<span class="res" style="border-color:#fbbf24;color:#fbbf24">📜 경험치 <b>${state.xpItems||0}</b></span>`
-    +`<span class="res" style="border-color:var(--blue);color:var(--blue)">⚔ 국력 <b>${Game.computeMight(state)}</b> <span class="k">(적 ${Game.enemyMight(state)})</span></span>`;
+    +`<span class="res" style="border-color:var(--blue);color:var(--blue)">⚔ 국력 <b>${Game.computeMight(state)}</b> <span class="k">(적 ${Game.enemyMight(state)})</span></span>`
+    +`<span class="res" style="border-color:#c084fc;color:#c084fc">🐉 용린 <b>${state.dragonScale||0}</b></span>`;
   document.getElementById('turn').textContent=state.turn;
 }
 // 🏅 다음 마일스톤(A2) — 국력 진행바. 전부 달성하면 숨김.
@@ -238,6 +239,19 @@ function renderPanel(){
   } else {
     h+=`<h3>📋 안내</h3><div class="k">🏰 <b>성을 눌러</b> 병력을 생산·출전시키세요.<br>부대(⚔)를 누른 뒤 갈 노드를 클릭 → 확정.<br>☠ 둥지를 공격해 사냥·토벌하면 보상·경험치·토벌 점수를 얻습니다.</div>`;
   }
+  // 드래곤(C1) — 영웅과 별개, 유일 개체. 용린 누적으로 단계 성장, 부대 하나에 배치해 전투 참여.
+  h+=(function(){ const d=state.dragon||{stage:0}, st=Game.DRAGON_STAGES, cur=st[d.stage], next=st[d.stage+1];
+    const loc=Game.dragonLoc(state), locTxt=loc==="idle"?"대기":(A(loc)?.name||"?")+" 배치";
+    const pct=next?Math.min(100,Math.round(100*(state.dragonScale||0)/next.need)):100;
+    let dh=`<hr><h3>🐉 드래곤</h3>
+      <div class="hero"><b><span style="color:#c084fc">${cur.name}</span></b> <span class="k">(${locTxt})</span>
+        <div class="k" style="font-size:11px;color:#c084fc">${cur.buff>0?`✦ 전투 참여 시 부대 전투력 +${Math.round(cur.buff*100)}%`:cur.desc}</div>`;
+    if(next) dh+=`<div style="height:5px;background:var(--line);border-radius:3px;margin-top:5px"><div style="height:100%;width:${pct}%;background:#c084fc;border-radius:3px"></div></div>
+        <div class="k" style="font-size:10px;margin-top:2px">다음 단계(${next.name}) — 용린 ${state.dragonScale||0}/${next.need}</div>`;
+    dh+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
+    if(s?.kind==="army"&&A(s.id).side==="P") dh+=`<button class="minibtn" data-dragonarmy="1">선택 부대에</button>`;
+    if(loc!=="idle") dh+=`<button class="minibtn" data-dragonidle="1">해제</button>`;
+    return dh+`</div></div>`; })();
   // 영웅 관리
   h+=`<hr><h3>🦸 영웅 <span class="k">· 경험치 아이템 ${state.xpItems||0}</span></h3>`;
   h+=`<div class="k" style="font-size:11px;margin-bottom:4px">몬스터 처치로 경험치 획득 → 영웅 승급(★↑)</div>`;
@@ -278,6 +292,8 @@ function renderPanel(){
   p.querySelectorAll('[data-promote]').forEach(b=>b.onclick=()=>promoteHero(b.dataset.promote));
   p.querySelectorAll('[data-choosetrait]').forEach(b=>b.onclick=()=>choosePromoteTrait(b.dataset.choosehero,b.dataset.choosetrait));
   const cp=p.querySelector('[data-cancelpromote]'); if(cp) cp.onclick=()=>{Game.cancelPromote(state);render();};
+  const da=p.querySelector('[data-dragonarmy]'); if(da) da.onclick=()=>{Game.assignDragon(state,state.selected.id);toast("🐉 드래곤 배치");render();};
+  const di=p.querySelector('[data-dragonidle]'); if(di) di.onclick=()=>{Game.assignDragon(state,"idle");toast("🐉 드래곤 해제");render();};
   const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
   p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
@@ -406,9 +422,10 @@ function showBattleModal(sum){
   const tag=sum.w==="draw"?'<span class="k">무승부</span>':(pWon?'<span style="color:var(--blue)">🔵 아군 우세</span>':'<span style="color:var(--red)">🔴 적 우세</span>');
   const stars=g=>"★".repeat(g);
   const heroLine=(sum.heroA||sum.heroB)?`<div class="res-line" style="color:var(--gold);font-size:12px">${[sum.heroA?`공격 ${stars(sum.gradeA)} ${sum.heroA}(+${sum.buffA}%)`:"",sum.heroB?`수비 ${stars(sum.gradeB)} ${sum.heroB}(+${sum.buffB}%)`:""].filter(Boolean).join(" · ")}</div>`:"";
+  const dragonLine=(sum.dragonA||sum.dragonB)?`<div class="res-line" style="color:#c084fc;font-size:12px">🐉 ${sum.dragonA?"공격":"수비"} 참전 · ${sum.dragonStage}</div>`:"";
   showModal(`<h2>⚔️ 전투</h2>
     <div class="res-line">${sum.attacker} <span class="k">→</span> ${sum.defender}${sum.fort?' <span class="k">(방어 보정)</span>':''}</div>
-    ${heroLine}
+    ${heroLine}${dragonLine}
     <div class="res-line">${tag}</div><div class="res-line"><b>${sum.result}</b></div>
     <div class="res-line k">생존 — 공격 ${sum.survA} · 수비 ${sum.survB}</div>
     <button class="minibtn" id="modalClose">확인</button>`);
@@ -453,6 +470,7 @@ function applySave(data){
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
   state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
+  state.dragon=state.dragon||{stage:0}; state.dragonScale=state.dragonScale||0;   // 구버전 세이브 호환(C1)
   (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
   document.getElementById('endturn').disabled=!!state.over; render();
 }
@@ -508,6 +526,7 @@ function stepTurn(){
     ? `⚠ ${r.seasonEvent.arriveIn}턴 후 시즌 대침공(${r.seasonEvent.count}차) 예고!${r.seasonEvent.previewUnit?` 예상 주력: ${r.seasonEvent.previewUnit}`:""}`
     : `⚔ 시즌 대침공 ${r.seasonEvent.count}차 도착! 병력 ${r.seasonEvent.troops}`, r.seasonEvent.type==="warning"?"warn":"danger");
   else if(r.factionEvents&&r.factionEvents.length) showThreatBanner(`⚔ ${r.factionEvents.map(e=>`${e.faction} 습격대 등장(병력 ${e.troops})${e.target&&e.target!=="P"?` — ${NODES[e.target]?.name||e.target} 노림!`:""}`).join(" · ")}`, "danger");
+  else if(r.dragonCompleted&&r.dragonCompleted.length) toast(`🐉 드래곤 성장: ${r.dragonCompleted[r.dragonCompleted.length-1].name}!`);
   else if(r.msCompleted&&r.msCompleted.length) toast(`🏅 마일스톤 달성: ${r.msCompleted[r.msCompleted.length-1].name}!`);
   else if(r.questsCompleted&&r.questsCompleted.length) toast(`🎯 목표 달성: ${r.questsCompleted[r.questsCompleted.length-1].name}!`);
   else if(r.built) toast(`🏗 ${r.built} 완성!`);
