@@ -285,6 +285,13 @@
   function resolveBattle(g,attacker,defender,node){
     const fort=NODES[node].type==="castle"&&NODES[node].owner===defender.side;
     const ancientHold=node==="ANCIENT"&&NODES.ANCIENT.owner===defender.side; // 고대성 방어 보정
+    // 월드 보스 격노(E2): 재등장한 보스(raidBossGen>0)는 전투 시작과 동시에 선제 강타 — 세대당 8%(최대 30%),
+    // 매번 같은 물량으로 zerg하는 걸 막아 "재도전은 더 준비해서 와야 한다"는 압박을 줌.
+    let enrageLoss=0;
+    if(defender.mtier==="레이드" && (g.raidBossGen||0)>0){
+      enrageLoss=Math.min(0.30, 0.08*g.raidBossGen);
+      for(const k in attacker.comp) attacker.comp[k]=Math.max(0,Math.round(attacker.comp[k]*(1-enrageLoss)));
+    }
     const aHero=hasCombatHero(g,attacker)?heroById(g,attacker.hero):null;
     const dHero=hasCombatHero(g,defender)?heroById(g,defender.hero):null;
     let aB=aHero?GRADE_BUFF[aHero.grade]+traitSum(aHero,"atkBonus"):0, dB=dHero?GRADE_BUFF[dHero.grade]+traitSum(dHero,"defBonus"):0;
@@ -315,7 +322,8 @@
       heroA:aHero?aHero.name:null,heroB:dHero?dHero.name:null,
       buffA:aHero?Math.round(aB*100):0, buffB:dHero?Math.round(dB*100):0,
       gradeA:aHero?aHero.grade:0, gradeB:dHero?dHero.grade:0,
-      dragonA:!!attacker.dragon, dragonB:!!defender.dragon, dragonStage:DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].name};
+      dragonA:!!attacker.dragon, dragonB:!!defender.dragon, dragonStage:DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].name,
+      enrageLoss:enrageLoss>0?Math.round(enrageLoss*100):0};
     if(res.w==="A"){ attacker.comp=rA; const wd=wound(attacker,beforeA,rA,aHero);
       let rw=""; if(defender.side==="M"&&defender.reward){for(const r in defender.reward)g.res[r]=(g.res[r]||0)+defender.reward[r];rw=" · 보상 "+Object.entries(defender.reward).map(([r,v])=>`${r} +${v}`).join(", ");sum.reward=defender.reward;
         if(defender.mtier&&SUBDUE_REWARD[defender.mtier]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[defender.mtier];sum.subdue=SUBDUE_REWARD[defender.mtier];rw+=` · 토벌점수 +${sum.subdue}`;}

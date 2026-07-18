@@ -124,12 +124,14 @@ const UNITS = {
   "석궁병": {hp:60, atk:16,df:3, proc:0.0, row:"back", kind:"spec",  desc:"대보병 특화"},
   "경기병": {hp:95, atk:17,df:5, proc:0.45,row:"mid",  kind:"gen_ab",desc:"범용(앞+뒤)"},
   "중기병": {hp:105,atk:12,df:8, proc:0.0, row:"mid",  kind:"spec",  desc:"대보병 돌격"},
-  // ===== 몬스터 (PvE 전용, 밸런스 검증 대상 아님) =====
+  // ===== 몬스터 (PvE 전용, 밸런스 검증 대상 아님 — verify.js가 NAMES에서 monster:true를 걸러냄) =====
+  // E2(개성 부여): 전부 kind:"tank"(맹목적 전열 공격)였던 걸 하피·오우거만 기존 kind 체계(범용/특화)로 갈라
+  // "숫자만 큰 늑대" 느낌을 깨뜨림 — 새 메커니즘 추가가 아니라 플레이어 유닛에도 쓰는 기존 kind를 재사용(리스크 최소).
   "늑대":  {hp:70, atk:14,df:3, proc:0.0, row:"front",kind:"tank", desc:"기동형 야수", monster:true},
   "고블린":{hp:60, atk:10,df:4, proc:0.0, row:"front",kind:"tank", desc:"약한 몬스터", monster:true},
   "오크":  {hp:150,atk:16,df:10,proc:0.0, row:"front",kind:"tank", desc:"강력한 전위", monster:true},
-  "하피":  {hp:70, atk:17,df:3, proc:0.0, row:"back", kind:"tank", desc:"후방 비행 위협", monster:true},
-  "오우거":{hp:280,atk:26,df:12,proc:0.0, row:"front",kind:"tank", desc:"거대 보스", monster:true},
+  "하피":  {hp:70, atk:17,df:3, proc:0.4, row:"back", kind:"gen_ab",desc:"공중 기습 — 확률로 전열+후열 동시 타격", monster:true},
+  "오우거":{hp:280,atk:26,df:12,proc:0.0, row:"front",kind:"spec", desc:"거대한 돌격 — 전열에 특화 강타(×1.4)", monster:true},
 };
 const NAMES = Object.keys(UNITS);
 const ROWS  = ["front","mid","back"];

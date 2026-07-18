@@ -4,6 +4,8 @@
    - 맵별로 다른 부분(COORDS·renderMap)은 각 템플릿 head 에 있음.
    - build.js 가 //__UI__ 자리에 인라인.
    ===================================================================== */
+// E2: 몬스터별 전투 역할 힌트(engine.js kind/proc 재배정과 짝 — 순수 표시용, 로직 없음).
+const MONSTER_ROLE={하피:"기습형",오우거:"돌격형"};
 function renderResBar(){
   const inc=income();
   document.getElementById('resbar').innerHTML=RES.map(r=>{
@@ -227,7 +229,7 @@ function renderPanel(){
     }
     if(mon){ const sc=Game.monsterScale(state), genTag=(s.id==="ANCIENT"&&state.raidBossGen)?` <span class="k">· ${state.raidBossGen+1}세대</span>`:"";
       h+=`<div style="color:#c4b5fd;margin-top:5px">☠ ${mon.name} <b>[${mon.mtier}]</b>${sc>1.05?` <span class="k">(강화 ×${sc.toFixed(1)})</span>`:""}${genTag}</div>
-      <div class="k" style="font-size:12px">구성: ${Object.entries(mon.comp).map(([k,v])=>unitLabel(k)+" "+v).join(", ")}</div>
+      <div class="k" style="font-size:12px">구성: ${Object.entries(mon.comp).map(([k,v])=>`${unitLabel(k)} ${v}${MONSTER_ROLE[baseOf(k)]?`(${MONSTER_ROLE[baseOf(k)]})`:""}`).join(", ")}</div>
       <div class="k" style="font-size:12px">처치 보상: ${Object.entries(mon.reward).map(([k,v])=>k+" "+v).join(", ")}</div>
       <div style="font-size:12px;margin-top:4px;color:var(--gold)">▶ ${mon.mtier==="레이드"?"대군+영웅을 갖춰 도전하세요":"부대로 공격해 소탕하세요"}</div>`;
     } else { h+=`<div class="k" style="font-size:12px;margin-top:4px">주둔: ${occ.map(a=>a.name).join(", ")||"없음"}</div>`; }
@@ -448,9 +450,10 @@ function showBattleModal(sum){
   const stars=g=>"★".repeat(g);
   const heroLine=(sum.heroA||sum.heroB)?`<div class="res-line" style="color:var(--gold);font-size:12px">${[sum.heroA?`공격 ${stars(sum.gradeA)} ${sum.heroA}(+${sum.buffA}%)`:"",sum.heroB?`수비 ${stars(sum.gradeB)} ${sum.heroB}(+${sum.buffB}%)`:""].filter(Boolean).join(" · ")}</div>`:"";
   const dragonLine=(sum.dragonA||sum.dragonB)?`<div class="res-line" style="color:#c084fc;font-size:12px">🐉 ${sum.dragonA?"공격":"수비"} 참전 · ${sum.dragonStage}</div>`:"";
+  const enrageLine=sum.enrageLoss?`<div class="res-line" style="color:#f87171;font-size:12px">💢 고대 생물이 포효하며 선제 강타! 공격측 병력 -${sum.enrageLoss}%</div>`:"";
   showModal(`<h2>⚔️ 전투</h2>
     <div class="res-line">${sum.attacker} <span class="k">→</span> ${sum.defender}${sum.fort?' <span class="k">(방어 보정)</span>':''}</div>
-    ${heroLine}${dragonLine}
+    ${enrageLine}${heroLine}${dragonLine}
     <div class="res-line">${tag}</div><div class="res-line"><b>${sum.result}</b></div>
     <div class="res-line k">생존 — 공격 ${sum.survA} · 수비 ${sum.survB}</div>
     <button class="minibtn" id="modalClose">확인</button>`);
