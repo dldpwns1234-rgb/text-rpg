@@ -76,7 +76,7 @@ function renderRankings(){
         <div style="height:4px;background:var(--line);border-radius:2px;margin-top:1px"><div style="height:100%;width:${w}%;background:${x.me?'var(--gold)':'#475569'};border-radius:2px"></div></div>
       </span></div>`;
   }).join("");
-  return `<div style="background:var(--bg);border:1px solid var(--gold);border-radius:10px;padding:8px 10px;margin-bottom:10px">
+  return `<div style="margin-bottom:8px">
     <div style="font-size:11px;color:var(--gold);margin-bottom:4px">🏆 대륙 랭킹 <span class="k">— 국력으로 겨루는 왕국들</span></div>
     ${rows}
   </div>`;
@@ -88,15 +88,28 @@ function renderRankSeason(){
   const left=Math.max(0, rs.next-state.turn), score=Math.round(rs.score||0);
   const pct=next?Math.min(100,Math.round(100*(score-tier.min)/(next.min-tier.min))):100;
   const toNext=next?`${next.name}까지 ${Math.max(0,next.min-score)}점`:"최고 티어 도달";
-  return `<div style="background:var(--bg);border:1px solid #c084fc;border-radius:10px;padding:8px 10px;margin-bottom:10px">
+  return `<div>
     <div style="font-size:11px;color:#c084fc">🏆 경쟁 시즌 <b>${rs.num}</b> · 현재 <b>${tier.name}</b> <span class="k">(${score}점 · ${left}턴 남음)</span></div>
     <div style="height:5px;background:var(--line);border-radius:3px;margin-top:5px"><div style="height:100%;width:${pct}%;background:#c084fc;border-radius:3px"></div></div>
     <div class="k" style="font-size:11px;margin-top:3px">${toNext} · 처치·방어·라이벌 격파로 점수↑</div>
   </div>`;
 }
-// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/랭킹/경쟁시즌/시즌침공/세력정보를 한 덩어리로 접고 펼침.
+// 🏆 경쟁 요약(랭킹+시즌 통합, 기본 접힘) — I1~I3로 아코디언이 길어져 모바일 스크롤 부담 → 한 줄 요약+접이식으로.
+function renderCompetition(){
+  if(!Game.continentalRankings) return "";
+  const open=state.compOpen===true;
+  const rank=Game.myRank(state), total=(state.rivals?state.rivals.length:0)+1;
+  const rs=state.rankSeason, tier=rs&&Game.tierForScore?Game.tierForScore(rs.score||0).name:"";
+  return `<div style="background:var(--bg);border:1px solid var(--gold);border-radius:10px;padding:8px 10px;margin-bottom:10px">
+    <div id="compToggle" style="cursor:pointer;font-size:11px;color:var(--gold);display:flex;justify-content:space-between;align-items:center">
+      <span>🏆 대륙 #${rank}/${total} · 시즌${rs?rs.num:1} ${tier}</span><span>${open?"▲":"▼"}</span>
+    </div>
+    ${open?`<div style="margin-top:6px">${renderRankings()}${renderRankSeason()}</div>`:""}
+  </div>`;
+}
+// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/경쟁(랭킹+시즌)/시즌침공/세력정보를 한 덩어리로 접고 펼침.
 function renderInfoAccordion(){
-  const body=renderQuests()+renderMilestone()+renderRankings()+renderRankSeason()+renderSeason()+renderFactionInfo();
+  const body=renderQuests()+renderMilestone()+renderCompetition()+renderSeason()+renderFactionInfo();
   if(!body) return "";
   const open=state.infoOpen!==false;
   return `<div style="margin-bottom:4px">
@@ -253,13 +266,19 @@ function renderPanel(){
     } // ← 출전 탭 끝
     if(tab==="군주"){
     // F4: 군주(레벨/재능/장비) — 몬스터 처치로 얻은 경험치·재료·설계도로 성장.
+    // 모바일 스크롤 절감: 재능/장비/제작을 서브탭으로 분리(연구 탭 전투·내정 패턴 재사용) — 한 번에 하나만 표시.
     const lord=state.lord||{level:1,xp:0,talentPoints:0,talents:{},equipment:{}};
     const xpNeed=Game.lordXPNeed(lord.level), pct=Math.min(100,Math.round(100*lord.xp/xpNeed));
     h+=`<div class="k">👑 군주 Lv.${lord.level} <span class="k">· 재능 포인트 ${lord.talentPoints||0}</span></div>
       <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div>
       <div class="k" style="font-size:10px;margin:2px 0 6px">경험치 ${lord.xp}/${xpNeed}</div>
       <div class="k" style="font-size:11px;margin-bottom:6px">🧱 재료 ${state.materials||0} · 📜 설계도 ${state.blueprints||0}</div>`;
-    h+=`<hr><div class="k" style="margin-bottom:4px">🌳 재능 트리</div>`;
+    const ltab=state.lordTab||"재능";
+    h+=`<div style="display:flex;gap:5px;margin-bottom:6px">`;
+    for(const lt of ["재능","장비","제작"]) h+=`<button class="minibtn" data-ltab="${lt}" style="flex:1;${ltab===lt?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${lt}</button>`;
+    h+=`</div>`;
+    if(ltab==="재능"){
+    h+=`<div class="k" style="margin-bottom:4px">🌳 재능 트리</div>`;
     const trees=[...new Set(Game.LORD_TALENTS.map(t=>t.tree))];
     for(const tree of trees){
       h+=`<div style="font-size:11px;margin:6px 0 2px;color:#cbd5e1">▸ ${tree}</div>`;
@@ -272,7 +291,9 @@ function renderPanel(){
           <button class="minibtn" data-investtalent="${t.id}" ${(lord.talentPoints||0)>=t.cost?"":"disabled"}>습득 (${t.cost})</button></div>`;
       }
     }
-    h+=`<hr><div class="k" style="margin-bottom:4px">⚔ 장비</div>`;
+    } // ← 재능 서브탭 끝
+    if(ltab==="장비"){
+    h+=`<div class="k" style="margin-bottom:4px">⚔ 장비</div>`;
     const inv=state.lordInventory||[];
     for(const slot of Game.EQUIP_SLOTS){
       const itemId=lord.equipment&&lord.equipment[slot], item=itemId?inv.find(x=>x.id===itemId):null;
@@ -292,13 +313,16 @@ function renderPanel(){
           <button class="minibtn" data-equipitem="${it.id}">장착</button></div>`;
       }
     }
-    h+=`<div class="k" style="font-size:11px;margin:6px 0 2px">🔨 제작</div>`;
+    } // ← 장비 서브탭 끝
+    if(ltab==="제작"){
+    h+=`<div class="k" style="margin-bottom:4px">🔨 제작</div>`;
     for(const key in Game.EQUIPMENT){ const it=Game.EQUIPMENT[key];
       const cs=Object.entries(it.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
       const ok=(state.materials||0)>=it.need.material&&(state.blueprints||0)>=it.need.blueprint&&canAfford(it.cost);
       h+=`<div class="prodrow"><span class="nm">${it.slot}: ${key} <span class="k">${it.desc} · 재료${it.need.material}·설계도${it.need.blueprint}</span></span>
         <span class="cost">${cs}</span><button class="minibtn" data-craftequip="${key}" ${ok?"":"disabled"}>제작</button></div>`;
     }
+    } // ← 제작 서브탭 끝
     } // ← 군주 탭 끝
   } else if(s?.kind==="army"){
     const a=A(s.id);
@@ -418,6 +442,7 @@ function renderPanel(){
   p.innerHTML=h;
   // 핸들러
   const infoT=p.querySelector('#infoToggle'); if(infoT) infoT.onclick=()=>{state.infoOpen=!(state.infoOpen!==false);render();};
+  const compT=p.querySelector('#compToggle'); if(compT) compT.onclick=()=>{state.compOpen=!(state.compOpen===true);render();};
   const mgmtT=p.querySelector('#mgmtToggle'); if(mgmtT) mgmtT.onclick=()=>{state.mgmtOpen=!(state.mgmtOpen===true);render();};
   const rl=p.querySelector('#rallyBtn'); if(rl) rl.onclick=()=>{const n=Game.rallyToDefense(state); toast(n?`⚔ ${n}개 부대 소집 — 성으로 귀환 중`:"소집할 부대 없음"); render();};
   p.querySelectorAll('[data-bld]').forEach(b=>b.onclick=()=>{state.castle.openBuilding=b.dataset.bld;render();});
@@ -427,6 +452,7 @@ function renderPanel(){
   p.querySelectorAll('[data-auto]').forEach(b=>b.onclick=()=>{const u=b.dataset.auto;const t=+document.getElementById('tier_'+u).value;const bld=Game.UNIT_BLD[u];Game.setAutoProduce(state,bld,u,t);const on=state.castle.autoProduce[bld];toast(on?`🔁 ${u} T${t} 반복 생산 켜짐`:"반복 생산 꺼짐");render();});
   p.querySelectorAll('[data-bup]').forEach(b=>b.onclick=()=>upgradeBuilding(b.dataset.bup));
   p.querySelectorAll('[data-ctab]').forEach(b=>b.onclick=()=>{state.castleTab=b.dataset.ctab;render();});
+  p.querySelectorAll('[data-ltab]').forEach(b=>b.onclick=()=>{state.lordTab=b.dataset.ltab;render();});
   const wl=p.querySelector('[data-wall]'); if(wl) wl.onclick=fortifyWall;
   p.querySelectorAll('[data-promote]').forEach(b=>b.onclick=()=>promoteHero(b.dataset.promote));
   p.querySelectorAll('[data-choosetrait]').forEach(b=>b.onclick=()=>choosePromoteTrait(b.dataset.choosehero,b.dataset.choosetrait));
@@ -598,7 +624,7 @@ function showBattleModal(sum){
 // 🌍 세계 이벤트(A3, 정복·함락·레이드)는 stepTurn에서 배너/토스트로 직접 처리 — 재생을 끊지 않으려 모달을 쓰지 않는다(유저 요청).
 
 /* ===== 저장/불러오기 ===== */
-const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier","infoOpen"];
+const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier","infoOpen","lordTab","compOpen"];
 function saveSnapshot(){const o={...state,ancientOwner:NODES.ANCIENT.owner,savedAt:Date.now()};for(const f of UI_FIELDS)delete o[f];return JSON.parse(JSON.stringify(o));}
 function applySave(data){
   if(typeof rtStop==="function")rtStop();   // 로드/새게임 시 실시간 루프 정지
