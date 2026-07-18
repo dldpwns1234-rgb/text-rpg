@@ -1380,6 +1380,22 @@ function assignHero(hid,loc){Game.assignHero(state,hid,loc); toast(`${heroById(h
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1600);}
+// 🚨 위협 알림 배너 — 시즌/습격대 예고·도래를 일반 토스트보다 눈에 띄게(더 크고, 더 오래, 색으로 위험도 구분).
+// 템플릿 수정 없이 동작하도록 엘리먼트를 JS에서 직접 생성(노드판·타일판 공용).
+function showThreatBanner(text,level){   // level: "warn"(예고,주황) | "danger"(도래,빨강)
+  let b=document.getElementById('threatBanner');
+  if(!b){ b=document.createElement('div'); b.id='threatBanner';
+    b.style.cssText="position:fixed;left:50%;top:14px;transform:translateX(-50%) translateY(-14px);"
+      +"min-width:240px;max-width:92vw;padding:12px 20px;border-radius:12px;color:#fff;font-size:14px;"
+      +"font-weight:700;text-align:center;box-shadow:0 10px 28px rgba(0,0,0,.55);opacity:0;"
+      +"transition:opacity .25s,transform .25s;pointer-events:none;z-index:25;border:1px solid;";
+    document.body.appendChild(b); }
+  const danger=level==="danger";
+  b.style.background=danger?"linear-gradient(135deg,#7f1d1d,#b91c1c)":"linear-gradient(135deg,#78350f,#d97706)";
+  b.style.borderColor=danger?"#ef4444":"var(--gold)";
+  b.textContent=text; b.style.opacity="1"; b.style.transform="translateX(-50%) translateY(0)";
+  clearTimeout(b._t); b._t=setTimeout(()=>{ b.style.opacity="0"; b.style.transform="translateX(-50%) translateY(-14px)"; },4200);
+}
 
 /* 전투·AI·규칙은 game.js 담당 (Game.*). UI만 아래에. */
 function showModal(html){document.getElementById('modalBody').innerHTML=html;
@@ -1487,10 +1503,10 @@ function stepTurn(){
   render(); saveLocal(true);   // 매 틱 자동 저장
   if(r.enemyBattle){ rtPause(); showBattleModal(r.enemyBattle); }   // 전투 → 자동 일시정지 + 관전
   if(r.worldEvent){ rtPause(); showWorldEventModal(r.worldEvent); }   // 정복/함락/레이드(A3) — 진행 이벤트로 안내, 게임은 계속
-  else if(r.seasonEvent) toast(r.seasonEvent.type==="warning"
+  else if(r.seasonEvent) showThreatBanner(r.seasonEvent.type==="warning"
     ? `⚠ ${r.seasonEvent.arriveIn}턴 후 시즌 대침공(${r.seasonEvent.count}차) 예고!${r.seasonEvent.previewUnit?` 예상 주력: ${r.seasonEvent.previewUnit}`:""}`
-    : `⚔ 시즌 대침공 ${r.seasonEvent.count}차 도착! 병력 ${r.seasonEvent.troops}`);
-  else if(r.factionEvents&&r.factionEvents.length) toast(`⚔ ${r.factionEvents.map(e=>`${e.faction} 습격대 등장(병력 ${e.troops})${e.target&&e.target!=="P"?` — ${NODES[e.target]?.name||e.target} 노림!`:""}`).join(" · ")}`);
+    : `⚔ 시즌 대침공 ${r.seasonEvent.count}차 도착! 병력 ${r.seasonEvent.troops}`, r.seasonEvent.type==="warning"?"warn":"danger");
+  else if(r.factionEvents&&r.factionEvents.length) showThreatBanner(`⚔ ${r.factionEvents.map(e=>`${e.faction} 습격대 등장(병력 ${e.troops})${e.target&&e.target!=="P"?` — ${NODES[e.target]?.name||e.target} 노림!`:""}`).join(" · ")}`, "danger");
   else if(r.msCompleted&&r.msCompleted.length) toast(`🏅 마일스톤 달성: ${r.msCompleted[r.msCompleted.length-1].name}!`);
   else if(r.questsCompleted&&r.questsCompleted.length) toast(`🎯 목표 달성: ${r.questsCompleted[r.questsCompleted.length-1].name}!`);
   else if(r.built) toast(`🏗 ${r.built} 완성!`);
