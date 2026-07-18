@@ -285,6 +285,9 @@ function renderPanel(){
   // 영웅 관리
   h+=`<hr><h3>🦸 영웅 <span class="k">· 경험치 아이템 ${state.xpItems||0}</span></h3>`;
   h+=`<div class="k" style="font-size:11px;margin-bottom:4px">몬스터 처치로 경험치 획득 → 영웅 승급(★↑)</div>`;
+  // F2: 영웅 위원회 — 내정형 영웅 여러 명을 성에 배치해 버프를 합산(마일스톤으로 자리 확장)
+  { const cc=Game.cityHeroes(state).length, cs=Game.councilSlots(state);
+    h+=`<div class="k" style="font-size:11px;margin-bottom:6px">🏛 위원회 ${cc}/${cs}</div>`; }
   for(const hero of state.heroes){
     const locTxt = hero.loc==="idle"?"대기": hero.loc==="castle"?"성 배치": (A(hero.loc)?.name||"?")+" 배치";
     h+=`<div class="hero"><b><span style="color:var(--gold)">${"★".repeat(hero.grade)}</span> ${hero.name}</b> <span class="k">(${hero.type})</span>
@@ -300,7 +303,8 @@ function renderPanel(){
       </div>`;
     } else {
       h+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
-      if(hero.type==="내정") h+=`<button class="minibtn" data-hcastle="${hero.id}">성에 배치</button>`;
+      if(hero.type==="내정"){ const full=hero.loc!=="castle" && Game.cityHeroes(state).length>=Game.councilSlots(state);
+        h+=`<button class="minibtn" data-hcastle="${hero.id}" ${full?"disabled":""}>성에 배치${full?" (위원회 가득참)":""}</button>`; }
       if(s?.kind==="army"&&A(s.id).side==="P") h+=`<button class="minibtn" data-harmy="${hero.id}">선택 부대에</button>`;
       h+=`<button class="minibtn" data-hidle="${hero.id}">해제</button>`;
       if(hero.grade<3){const pc=Game.PROMOTE_COST[hero.grade];

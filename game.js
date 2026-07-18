@@ -264,13 +264,18 @@
   const hasR=(g,k)=>!!g.research.done[k];
   const pBaseMp=g=>5+(hasR(g,"행군술")?1:0)+(hasR(g,"행군술 II")?1:0);   // 확장 맵 대응(회랑 P→E≈7)
   const cityHero=g=>g.heroes.find(h=>h.type==="내정"&&h.loc==="castle");
-  const buildRate=g=>{const h=cityHero(g);return 1+(g.castle.level-1)+(h?(h.grade>=3?2:1):0)+(hasR(g,"대장간")?1:0)+(hasR(g,"대장간 II")?1:0)+(h?traitSum(h,"buildBonus"):0);};
+  // F2(영웅 위원회): "성 배치"가 1명 전용이던 걸 슬롯 N개로 일반화 — 내정형만, 마일스톤(m3)로 3번째 자리 해금.
+  const cityHeroes=g=>g.heroes.filter(h=>h.type==="내정"&&h.loc==="castle");
+  const councilSlots=g=>2+unlockCount(g,"council",1);
+  const councilGradeSum=g=>cityHeroes(g).reduce((s,h)=>s+(h.grade>=3?2:1),0);
+  const councilSum=(g,field)=>cityHeroes(g).reduce((s,h)=>s+traitSum(h,field),0);
+  const buildRate=g=>1+(g.castle.level-1)+councilGradeSum(g)+(hasR(g,"대장간")?1:0)+(hasR(g,"대장간 II")?1:0)+councilSum(g,"buildBonus");
   const aiTierOf=g=>Math.min(AI_TIER_MAX,1+Math.floor(g.turn/(AI.tierEvery||14)));   // AI 티어 성장(플레이어 T4/T5 해금과 무관)
   const tierCap=g=>{const u=milestoneUnlocks(g); if(u.includes("tier5"))return 5; if(u.includes("tier4"))return 4; return 3;};   // 생산 건물이 오를 수 있는 실제 상한(마일스톤 해금 게이트)
   const aiCombatBuff=g=>0.06+0.03*(aiTierOf(g)-1);                                // AI 지휘관 정예화(영웅 대칭)
   const castleBaseIncome=g=>({식량:3+g.castle.level,목재:2+g.castle.level,석재:1+g.castle.level,철:g.castle.level+2});
-  function econIncome(g){const inc={식량:0,목재:0,석재:0,철:0}, ch=cityHero(g);
-    const mult=((hasR(g,"영농")?1.5:1)+(hasR(g,"영농 II")?0.25:0))*(1+(ch?traitSum(ch,"econBonus"):0));   // 감독관 특성: 자원 건물 산출 추가
+  function econIncome(g){const inc={식량:0,목재:0,석재:0,철:0};
+    const mult=((hasR(g,"영농")?1.5:1)+(hasR(g,"영농 II")?0.25:0))*(1+councilSum(g,"econBonus"));   // 감독관 특성: 자원 건물 산출 추가(위원회 전원 합산)
     for(const k in ECON_BUILDINGS){const b=ECON_BUILDINGS[k],n=g.castle.econ[k]||0;if(b.res&&n)inc[b.res]+=Math.round(b.amt*n*mult);}return inc;}
   function gatherOf(g,a){const n=NODES[a.node];if(a.side!=="P"||n.type!=="resource")return null;
     const hero=a.hero&&heroById(g,a.hero); const isCity=hero&&hero.type==="내정";
@@ -279,7 +284,7 @@
     return {res:n.res,amt:Math.round(base*mult)};}
   // 총 병력(주둔군 + 아군 부대) → 식량 유지비
   const totalTroops=g=>Object.values(g.castle.garrison).reduce((x,y)=>x+y,0)+g.armies.filter(a=>a.side==="P").reduce((x,a)=>x+troops(a),0);
-  const foodUpkeep=g=>{const ch=cityHero(g), rate=UPKEEP_RATE*(1-(ch?traitSum(ch,"upkeepReduce"):0));   // 보급관 특성: 유지비 완화
+  const foodUpkeep=g=>{const rate=UPKEEP_RATE*(1-councilSum(g,"upkeepReduce"));   // 보급관 특성: 유지비 완화(위원회 합산)
     return Math.ceil(Math.max(0,totalTroops(g)-UPKEEP_FREE)*rate);};
   function income(g){const inc={식량:0,목재:0,석재:0,철:0},base=castleBaseIncome(g),e=econIncome(g);
     for(const r of RES)inc[r]+=base[r]+e[r];
@@ -544,9 +549,12 @@
     if(!(r.req||[]).every(q=>g.research.done[q]))return"선행 연구 필요";
     if((r.excludes||[]).some(ex=>g.research.done[ex]))return"상호 배타 연구 — 이미 다른 노선을 선택함";
     if(!canAfford(g,r.cost))return"자원 부족";
-    pay(g,r.cost); const ch=cityHero(g), turns=Math.max(1,r.turns-(ch?traitSum(ch,"researchBonus"):0));
+    pay(g,r.cost); const turns=Math.max(1,r.turns-councilSum(g,"researchBonus"));
     g.research.active={key:k,left:turns}; return null;}
-  function assignHero(g,hid,loc){heroById(g,hid).loc=loc; return null;}
+  function assignHero(g,hid,loc){const h=heroById(g,hid); if(!h)return"영웅 없음";
+    // F2: 위원회(성 배치)는 내정형 전용 + 슬롯 상한 — 이미 자리를 잡은 영웅의 재배치(같은 자리)는 허용.
+    if(loc==="castle" && h.loc!=="castle" && cityHeroes(g).length>=councilSlots(g)) return"위원회 자리가 가득 찼습니다";
+    h.loc=loc; return null;}
   // 드래곤(C1) 배치: 영웅과 달리 유일 개체라 army.dragon 불리언 플래그 하나로 위치 추적(loc: 부대 id | "idle").
   function assignDragon(g,loc){ for(const a of g.armies) if(a.dragon) delete a.dragon;
     if(loc!=="idle"){ const a=findArmy(g,loc); if(a) a.dragon=true; } return null; }
@@ -698,7 +706,7 @@
   const MILESTONES=[
     {id:"m1",name:"개척지",       need:150, reward:{목재:40,석재:20},                              desc:"국력 150 — 왕국의 기틀을 다졌다."},
     {id:"m2",name:"번영하는 영지", need:280, reward:{식량:60,철:30},               unlock:"slot",  desc:"국력 280 — 운용 부대 수 상한 +1."},
-    {id:"m3",name:"무장한 왕국",   need:450, reward:{철:50,석재:40},               unlock:"wall",  desc:"국력 450 — 성벽 보강 상한 +1."},
+    {id:"m3",name:"무장한 왕국",   need:450, reward:{철:50,석재:40},               unlock:["wall","council"],  desc:"국력 450 — 성벽 보강 상한 +1, 영웅 위원회 자리 +1."},
     {id:"m4",name:"지역의 패자",   need:650, reward:{식량:100,목재:80,철:60},           unlock:"tier4", desc:"국력 650 — 생산 건물 T4(전설) 해금."},
     {id:"m5",name:"왕국의 전설",   need:900, reward:{식량:150,목재:120,석재:100,철:100}, unlock:["slot","tier5"], desc:"국력 900 — 운용 부대 수 상한 +1, 생산 건물 T5(신화) 해금."},
   ];
@@ -790,7 +798,7 @@
 
   API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
     TIER_MAX,TIER_NAME,tierCap,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
-    GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTraits,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
+    GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTraits,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,cityHeroes,councilSlots,councilSum,
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,armyCapFor,
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
