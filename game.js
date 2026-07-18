@@ -176,6 +176,17 @@
     {id:"frostqueen",name:"서리여왕 리안", bias:"혼합", factor:1.05, base:100},
   ];
   let threatMul=g=>1;   // 위협 등반 계수(I4에서 시즌 회차·랭크 기반으로 확장). I1~I3에선 1(무영향).
+  // 경쟁 시즌(I3): 대침공 스케줄러 g.season과 별개. 성과 점수→티어→보상, 소프트리셋 후 새 시즌(비종결).
+  const RANK_SEASON_LEN=180, RANK_SOFTRESET=0.35;
+  const RANK_TIERS=[
+    {id:"bronze", name:"브론즈",   min:0},   {id:"silver", name:"실버",     min:120},
+    {id:"gold",   name:"골드",     min:280}, {id:"plat",   name:"플래티넘", min:480},
+    {id:"diamond",name:"다이아",   min:720}, {id:"legend", name:"전설",     min:1050},
+  ];
+  const tierForScore=s=>{ let t=RANK_TIERS[0]; for(const x of RANK_TIERS) if(s>=x.min) t=x; return t; };
+  const rankTierIndex=g=>RANK_TIERS.findIndex(x=>x.id===tierForScore((g.rankSeason&&g.rankSeason.score)||0).id);
+  const rankTierReward=idx=>{ const m=idx+1; return {식량:60*m, 철:35*m, 목재:35*m, 재료:2*m, 설계도:idx}; };
+  function addSeasonScore(g,amt){ if(g.rankSeason&&amt>0) g.rankSeason.score=(g.rankSeason.score||0)+amt; }
 
   const RESEARCH={
     "축성술":{cat:"전투",sub:"공성·수성",req:[],cost:{목재:15,철:15},turns:2,desc:"내 성 수비 +15%"},
@@ -292,6 +303,7 @@
     season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
     factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
     rivals:RIVALS.map(r=>({id:r.id,might:r.base})), rivalKills:0,   // 라이벌 왕국(I1) — 국력이 자라는 경쟁 세력, 격파 누적
+    rankSeason:{num:1,next:1+RANK_SEASON_LEN,score:0,bestRank:99,tierHist:[]},   // 경쟁 시즌(I3)
     pendingPromote:null,   // 영웅 승급 특성 선택 대기(C2)
     dragon:{stage:0,skills:[],skillPoints:0,scaleSpent:0}, dragonScale:0,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음). F3: 스킬은 req 트리+skillPoints로 획득(2択 폐기)
     lord:{level:1,xp:0,talentPoints:0,talents:{},equipment:{}}, lordInventory:[], materials:0, blueprints:0,   // 군주(F4) — 몬스터 처치로 성장, 재능 트리+장비
@@ -390,7 +402,20 @@
     return pool[Math.floor(Math.random()*pool.length)].id; }
   function damageRival(g,rid,amount){ if(!g.rivals) return null; const r=g.rivals.find(x=>x.id===rid); if(!r) return null;
     const dmg=amount*RIVAL_HIT; r.might=Math.max(0, r.might-dmg); g.rivalKills=(g.rivalKills||0)+1;
+    addSeasonScore(g,25);   // I3: 라이벌 격파는 핵심 경쟁 행위 → 고배점
     return {name:rivalName(rid)||rid, amount:Math.round(dmg)}; }
+  // I3: 경쟁 시즌 마감 — 순차 tick 패턴. turn>=next면 점수→티어→보상→소프트리셋→새 시즌. over 절대 안 켬(비종결).
+  function rankSeasonTick(g){ const rs=g.rankSeason; if(!rs) return null;
+    rs.bestRank=Math.min(rs.bestRank||99, myRank(g));   // 시즌 중 최고 순위 기록
+    if(g.turn < rs.next) return null;
+    const tier=tierForScore(rs.score||0), idx=RANK_TIERS.findIndex(x=>x.id===tier.id), reward=rankTierReward(idx);
+    for(const r in reward){ if(RES.includes(r)) g.res[r]=(g.res[r]||0)+reward[r]; }
+    if(reward.재료) g.materials=(g.materials||0)+reward.재료;
+    if(reward.설계도) g.blueprints=(g.blueprints||0)+reward.설계도;
+    const ev={type:"seasonEnd", num:rs.num, tier, score:Math.round(rs.score||0), bestRank:rs.bestRank, reward};
+    rs.tierHist=rs.tierHist||[]; rs.tierHist.push(tier.id);
+    rs.score=Math.floor((rs.score||0)*RANK_SOFTRESET); rs.num++; rs.next=g.turn+RANK_SEASON_LEN; rs.bestRank=99;   // 소프트리셋+다음 시즌(난도는 I4 threatMul가 회차 따라 상승)
+    return ev; }
 
   // ---- 연구 버프 → 전투 mods ----
   function researchMods(g){const m={};
@@ -409,6 +434,7 @@
     const rw={식량:n, 철:Math.round(n*0.6), 목재:Math.round(n*0.4)};
     for(const r in rw) g.res[r]=(g.res[r]||0)+rw[r];
     const xp=Math.max(1,Math.floor(n/8)); g.xpItems=(g.xpItems||0)+xp; g.lord.xp=(g.lord.xp||0)+xp;
+    addSeasonScore(g, Math.max(2,Math.floor(n/2)));   // I3: 위협군 격파/방어 승리 → 시즌 점수(규모 비례)
     sum.threatReward={...rw, 경험치:xp, 군주경험치:xp};
     return ` · 격퇴 보상 ${Object.entries(rw).map(([r,v])=>`${r}+${v}`).join(" ")} · 경험치+${xp} · 군주경험치+${xp}`; }
   // 몬스터 처치 보상 — resolveBattle(온라인)·offlineStep(오프라인 사냥) 공용. rw 문자열 반환, sum에 세부 기록.
@@ -423,6 +449,7 @@
     if(mt&&LORD_XP_REWARD[mt]){g.lord.xp=(g.lord.xp||0)+LORD_XP_REWARD[mt];sum.lordXp=LORD_XP_REWARD[mt];rw+=` · 군주 경험치 +${sum.lordXp}`;}
     if(mt&&MATERIAL_REWARD[mt]){g.materials=(g.materials||0)+MATERIAL_REWARD[mt];sum.materials=MATERIAL_REWARD[mt];rw+=` · 재료 +${sum.materials}`;}
     if(mt&&BLUEPRINT_REWARD[mt]){g.blueprints=(g.blueprints||0)+BLUEPRINT_REWARD[mt];sum.blueprints=BLUEPRINT_REWARD[mt];rw+=` · 설계도 +${sum.blueprints}`;}
+    addSeasonScore(g,{사냥:1,토벌:3,레이드:10}[mt]||0);   // I3: 몬스터 처치도 시즌 점수 소액 기여
     if(mt&&mt!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}
     else if(mt==="레이드"){ g.raidBossGen=(g.raidBossGen||0)+1; (g.respawns=g.respawns||[]).push({ancient:true,at:g.turn+RESPAWN_DELAY*3}); }
     return rw; }
@@ -900,6 +927,7 @@
       g.milestones.done.push(m.id);
       if(m.reward) for(const r in m.reward) g.res[r]=(g.res[r]||0)+m.reward[r];
       if(m.unlock) for(const u of (Array.isArray(m.unlock)?m.unlock:[m.unlock])) g.milestones.unlocked.push(u);
+      addSeasonScore(g,40);   // I3: 성장(마일스톤 달성)도 시즌 점수
       g.milestones.idx++; completed.push(m);
     }
     return completed;
@@ -979,7 +1007,8 @@
     const msCompleted=milestoneTick(g);
     const dragonCompleted=dragonTick(g);
     lordTick(g);
-    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, dragonCompleted, worldEvent, seasonEvent, factionEvents};
+    const rankEvent=rankSeasonTick(g);   // I3: 경쟁 시즌 마감 판정
+    return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, dragonCompleted, worldEvent, seasonEvent, factionEvents, rankEvent};
   }
 
   // ---- 오프라인 누적(A4/H2): 실시각 계산은 ui.js 몫(Date.now()) — 여긴 "틱 수"만 받아 진행.
@@ -1019,6 +1048,7 @@
         if(s.w==="B") rep.skirmishWins++;                          // 부대가 견제 격퇴
         else if(s.w==="A"){ rep.skirmishLosses++; rep.lostArmies++; } } }   // 부대 전멸
     g.turn++; tavernTick(g); processRespawns(g); questTick(g); milestoneTick(g); dragonTick(g); lordTick(g);
+    if(rep){ const re=rankSeasonTick(g); if(re){ rep.seasonEnds=(rep.seasonEnds||0)+1; rep.lastTier=re.tier.name; } }   // I3: 오프라인에도 시즌 마감 진행
   }
   function offlineTick(g,ticks){ ticks=Math.max(0,Math.min(ticks|0,OFFLINE_MAX_TICKS));
     const rep={hunts:0,huntRewards:{},skirmishes:0,skirmishWins:0,skirmishLosses:0,lostArmies:0,built:[],research:[]};
@@ -1035,6 +1065,7 @@
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
     RIVALS,rivalTick,continentalRankings,myRank,threatMul,pickAggressorRival,damageRival,
+    RANK_TIERS,RANK_SEASON_LEN,rankSeasonTick,addSeasonScore,tierForScore,rankTierIndex,
     DRAGON_STAGES,DRAGON_SKILLS,dragonTick,investDragonSkill,assignDragon,dragonLoc,
     LORD_TALENTS,EQUIPMENT,EQUIP_SLOTS,ENHANCE_MULT,lordTick,investTalent,craftEquipment,enhanceEquipment,equipItem,unequipItem,lordXPNeed,enhanceCost,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,

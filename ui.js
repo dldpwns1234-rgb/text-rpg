@@ -81,9 +81,22 @@ function renderRankings(){
     ${rows}
   </div>`;
 }
-// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/랭킹/시즌/세력정보를 한 덩어리로 접고 펼침. 기본은 펼침(온보딩 가시성 유지).
+// 🏆 경쟁 시즌(I3) — 현재 시즌 점수·티어·남은 턴. 처치·방어·라이벌 격파로 점수를 쌓아 시즌 종료 시 랭크 보상.
+function renderRankSeason(){
+  const rs=state.rankSeason; if(!rs||!Game.tierForScore) return "";
+  const tier=Game.tierForScore(rs.score||0), tiers=Game.RANK_TIERS, idx=tiers.findIndex(x=>x.id===tier.id), next=tiers[idx+1];
+  const left=Math.max(0, rs.next-state.turn), score=Math.round(rs.score||0);
+  const pct=next?Math.min(100,Math.round(100*(score-tier.min)/(next.min-tier.min))):100;
+  const toNext=next?`${next.name}까지 ${Math.max(0,next.min-score)}점`:"최고 티어 도달";
+  return `<div style="background:var(--bg);border:1px solid #c084fc;border-radius:10px;padding:8px 10px;margin-bottom:10px">
+    <div style="font-size:11px;color:#c084fc">🏆 경쟁 시즌 <b>${rs.num}</b> · 현재 <b>${tier.name}</b> <span class="k">(${score}점 · ${left}턴 남음)</span></div>
+    <div style="height:5px;background:var(--line);border-radius:3px;margin-top:5px"><div style="height:100%;width:${pct}%;background:#c084fc;border-radius:3px"></div></div>
+    <div class="k" style="font-size:11px;margin-top:3px">${toNext} · 처치·방어·라이벌 격파로 점수↑</div>
+  </div>`;
+}
+// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/랭킹/경쟁시즌/시즌침공/세력정보를 한 덩어리로 접고 펼침.
 function renderInfoAccordion(){
-  const body=renderQuests()+renderMilestone()+renderRankings()+renderSeason()+renderFactionInfo();
+  const body=renderQuests()+renderMilestone()+renderRankings()+renderRankSeason()+renderSeason()+renderFactionInfo();
   if(!body) return "";
   const open=state.infoOpen!==false;
   return `<div style="margin-bottom:4px">
@@ -602,6 +615,7 @@ function applySave(data){
   if(state.raid) state.raid.settled=state.raid.settled||false;   // 구버전 세이브 호환 — 고대성 점거 1회 발동 플래그
   state.ai=state.ai||{budget:0}; if(state.ai.lastWave==null)state.ai.lastWave=-99;   // 구버전 세이브 호환 — 웨이브 간격 추적
   state.rivals=state.rivals||Game.RIVALS.map(r=>({id:r.id,might:r.base})); state.rivalKills=state.rivalKills||0;   // 구버전 세이브 호환 — 라이벌 왕국(I1)
+  state.rankSeason=state.rankSeason||{num:1,next:state.turn+Game.RANK_SEASON_LEN,score:0,bestRank:99,tierHist:[]};   // 구버전 세이브 호환 — 경쟁 시즌(I3)
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
   state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
@@ -679,6 +693,8 @@ function stepTurn(){
     if(pWon||b.w==="draw"){ toast(`⚔ ${b.result.split('·').slice(0,2).join('·').trim()}`); }   // 승리·무승부 → 흐름 안 끊고 토스트
     else { rtPause(); showBattleModal(b); }   // 패배(부대 전멸/수도 위기)만 멈추고 모달로 확인
   }
+  if(r.rankEvent){ const e=r.rankEvent; const rw=e.reward?Object.entries(e.reward).filter(([k,v])=>v).map(([k,v])=>`${k}+${v}`).join(" "):"";   // I3: 경쟁 시즌 마감 — 배너로만(재생 안 끊음)
+    showThreatBanner(`🏆 경쟁 시즌 ${e.num} 종료 — <b>${e.tier.name}</b> 달성! (최고 순위 #${e.bestRank}) 보상 ${rw} · 새 시즌 시작`, "warn"); }
   if(r.worldEvent){ const ev=r.worldEvent;   // 정복/함락/레이드(A3) — 진행 이벤트. 유저 요청: 팝업이 재생을 끊는 게 불편 → 정지·모달 없이 배너/토스트로만 안내(게임은 계속).
     const rw=ev.reward?Object.entries(ev.reward).map(([k,v])=>`${k} +${v}`).join(", "):"";
     if(ev.type==="conquest") toast(`🏰 정복! 적 수도 함락${rw?` — ${rw}`:""}`);
