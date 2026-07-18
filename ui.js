@@ -125,15 +125,19 @@ function renderPanel(){
     if(ob && c.buildings.includes(ob)){
       const lv=c.blevel[ob]||1;
       h+=`<hr><div class="k" style="margin-bottom:4px">${BUILDINGS[ob].icon} ${ob} — 병종·티어·수량 <span class="k">(최대 T${lv})</span></div>`;
+      const ap=c.autoProduce&&c.autoProduce[ob];
       for(const u of BUILDINGS[ob].units){
         const selT=Math.min(lv,state.prodTier[u]||1);
         let topts="";
         for(let t=1;t<=lv;t++){const cc=costOf(u,t);const cs=Object.entries(cc).map(([r,v])=>`${r[0]}${v}`).join("");topts+=`<option value="${t}" ${t===selT?"selected":""}>T${t} ${TIER_NAME[t]} (${cs})</option>`;}
-        h+=`<div class="prodrow"><span class="nm">${u}</span>
+        const autoOn=ap&&ap.u===u;   // G-C: 이 병종이 반복생산 대상인지
+        h+=`<div class="prodrow"><span class="nm">${u}${autoOn?` <span style="color:var(--green);font-size:10px">🔁T${ap.tier}</span>`:""}</span>
           <select id="tier_${u}" style="background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:11px">${topts}</select>
-          <input type="number" id="qty_${u}" value="1" min="1" style="width:40px;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:12px;text-align:center">
-          <button class="minibtn" data-make="${u}">생산</button></div>`;
+          <input type="number" id="qty_${u}" value="1" min="1" style="width:36px;background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:12px;text-align:center">
+          <button class="minibtn" data-make="${u}">생산</button>
+          <button class="minibtn" data-auto="${u}" style="${autoOn?'background:var(--line);border-color:var(--green);color:var(--green)':''}" title="반복 생산">🔁</button></div>`;
       }
+      if(ap) h+=`<div class="k" style="font-size:11px;color:var(--green)">🔁 ${ap.u} T${ap.tier} 자동 반복 생산 중 — 자원 되는 한 계속 훈련</div>`;
     }
     // 🏗 자원 건물 — 레벨업(출력↑, 시간 소요). 병원은 레벨×3 치료
     h+=`<hr><div class="k" style="margin-bottom:4px">🏗 자원 건물 <span class="k">(레벨업 = 출력↑)</span></div>`;
@@ -374,6 +378,7 @@ function renderPanel(){
   p.querySelectorAll('[data-construct]').forEach(b=>b.onclick=()=>construct(b.dataset.construct));
   p.querySelectorAll('select[id^="tier_"]').forEach(s=>s.onchange=()=>{state.prodTier[s.id.slice(5)]=+s.value;});
   p.querySelectorAll('[data-make]').forEach(b=>b.onclick=()=>{const u=b.dataset.make;const t=+document.getElementById('tier_'+u).value;state.prodTier[u]=t;produce(u,+document.getElementById('qty_'+u).value,t);});
+  p.querySelectorAll('[data-auto]').forEach(b=>b.onclick=()=>{const u=b.dataset.auto;const t=+document.getElementById('tier_'+u).value;const bld=Game.UNIT_BLD[u];Game.setAutoProduce(state,bld,u,t);const on=state.castle.autoProduce[bld];toast(on?`🔁 ${u} T${t} 반복 생산 켜짐`:"반복 생산 꺼짐");render();});
   p.querySelectorAll('[data-bup]').forEach(b=>b.onclick=()=>upgradeBuilding(b.dataset.bup));
   p.querySelectorAll('[data-ctab]').forEach(b=>b.onclick=()=>{state.castleTab=b.dataset.ctab;render();});
   const wl=p.querySelector('[data-wall]'); if(wl) wl.onclick=fortifyWall;
@@ -597,6 +602,7 @@ function applySave(data){
   // F1: castle.queue가 구버전 단일 배열이면 건물별 오브젝트로 재분배(유닛 유실 방지)
   if(Array.isArray(state.castle.queue)){ const old=state.castle.queue; state.castle.queue={};
     for(const u of old){ const b=Game.UNIT_BLD[Game.baseOf(u)]; if(b) (state.castle.queue[b]=state.castle.queue[b]||[]).push(u); } }
+  state.castle.autoProduce=state.castle.autoProduce||{};   // G-C: 구버전 세이브 호환
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}

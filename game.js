@@ -266,7 +266,7 @@
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
+    castle:{level:1,queue:{},autoProduce:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
     raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -585,6 +585,18 @@
   function tickProduction(g){ if(g.starving) return; const rate=buildRate(g);
     for(const b in g.castle.queue){ let made=rate; const q=g.castle.queue[b];
       while(made>0&&q.length){ const u=q.shift(); g.castle.garrison[u]=(g.castle.garrison[u]||0)+1; made--; } } }
+  // G-C: 자동 생산 — 반복생산 설정된 건물의 큐를 매 틱 buildRate만큼 채움(자원이 되는 한). 자원→병력→국력 전환 → "눌러놓으면 자란다".
+  // 자원 부족 시 produce가 에러 반환 → 조용히 멈춤(성장이 자원에 자연 게이트). offlineStep에도 연결(오프라인 성장은 경제/생산이라 OK).
+  function autoProduceTick(g){ const ap=g.castle.autoProduce; if(!ap||g.starving) return; const rate=Math.max(1,buildRate(g));
+    for(const b in ap){ const spec=ap[b]; if(!spec) continue;
+      const q=g.castle.queue[b]=g.castle.queue[b]||[]; let guard=0;
+      while(q.length<rate && guard++<30){ if(produce(g,spec.u,1,spec.tier)) break; } } }
+  // 반복생산 토글: 같은 (건물,병종,티어) 재설정 시 해제. 다른 병종이면 교체.
+  function setAutoProduce(g,building,u,tier){ g.castle.autoProduce=g.castle.autoProduce||{};
+    const cur=g.castle.autoProduce[building];
+    if(cur && cur.u===u && cur.tier===tier) delete g.castle.autoProduce[building];
+    else g.castle.autoProduce[building]={u,tier:tier||1};
+    return null; }
   // ---- 시간 소요 건설(건설잡 1개 동시). 완료 시 효과 적용. 저장 호환(순수 데이터) ----
   const ECON_MAX=6;
   const econCost=(k,lv)=>{const b=ECON_BUILDINGS[k].cost,c={};for(const r in b)c[r]=Math.round(b[r]*(1+lv*0.6));return c;};
@@ -868,7 +880,7 @@
     if(g.over)return{enemyBattle:null};
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving = g.res.식량<0; if(g.starving) g.res.식량=0;   // 식량 고갈 → 이번 턴 생산 중단
-    tickProduction(g);
+    autoProduceTick(g); tickProduction(g);
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
     let built=null;
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){built=g.castle.build.label;completeBuild(g,g.castle.build);g.castle.build=null;}}   // 건설 진행
@@ -896,7 +908,7 @@
   function offlineStep(g){
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving=g.res.식량<0; if(g.starving)g.res.식량=0;
-    tickProduction(g);
+    autoProduceTick(g); tickProduction(g);
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){completeBuild(g,g.castle.build);g.castle.build=null;}}
     let heal=(g.castle.econ["병원"]||0)*3;
@@ -918,7 +930,7 @@
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
     MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,
-    produce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
+    produce,setAutoProduce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
   if(typeof module!=="undefined"&&module.exports) module.exports=API; else global.Game=API;
