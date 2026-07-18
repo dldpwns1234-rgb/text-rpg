@@ -128,12 +128,12 @@ function renderPanel(){
     const ob=c.openBuilding;
     if(ob && c.buildings.includes(ob)){
       const lv=c.blevel[ob]||1;
-      h+=`<hr><div class="k" style="margin-bottom:4px">${BUILDINGS[ob].icon} ${ob} — 병종·티어·수량 <span class="k">(최대 T${lv})</span></div>`;
+      h+=`<hr><div class="k" style="margin-bottom:4px">${BUILDINGS[ob].icon} ${ob} — 병종·티어·수량 <span class="k">(최대 T${lv} · ⏱=훈련시간, 고티어일수록 오래)</span></div>`;
       const ap=c.autoProduce&&c.autoProduce[ob];
       for(const u of BUILDINGS[ob].units){
         const selT=Math.min(lv,state.prodTier[u]||1);
         let topts="";
-        for(let t=1;t<=lv;t++){const cc=costOf(u,t);const cs=Object.entries(cc).map(([r,v])=>`${r[0]}${v}`).join("");topts+=`<option value="${t}" ${t===selT?"selected":""}>T${t} ${TIER_NAME[t]} (${cs})</option>`;}
+        for(let t=1;t<=lv;t++){const cc=costOf(u,t);const cs=Object.entries(cc).map(([r,v])=>`${r[0]}${v}`).join("");topts+=`<option value="${t}" ${t===selT?"selected":""}>T${t} ${TIER_NAME[t]} (${cs}·⏱${Game.TRAIN_TICKS[t]})</option>`;}
         const autoOn=ap&&ap.u===u;   // G-C: 이 병종이 반복생산 대상인지
         h+=`<div class="prodrow"><span class="nm">${u}${autoOn?` <span style="color:var(--green);font-size:10px">🔁T${ap.tier}</span>`:""}</span>
           <select id="tier_${u}" style="background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:3px;font-size:11px">${topts}</select>
@@ -608,6 +608,7 @@ function applySave(data){
   if(Array.isArray(state.castle.queue)){ const old=state.castle.queue; state.castle.queue={};
     for(const u of old){ const b=Game.UNIT_BLD[Game.baseOf(u)]; if(b) (state.castle.queue[b]=state.castle.queue[b]||[]).push(u); } }
   state.castle.autoProduce=state.castle.autoProduce||{};   // G-C: 구버전 세이브 호환
+  state.castle.trainProg=state.castle.trainProg||{};   // 생산시간: 구버전 세이브 호환
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}
@@ -656,7 +657,12 @@ function stepTurn(){
   if(state.over) return;
   const r=Game.endTurn(state);
   render(); saveLocal(true);   // 매 틱 자동 저장
-  if(r.enemyBattle){ rtPause(); showBattleModal(r.enemyBattle); }   // 전투 → 자동 일시정지 + 관전
+  // 전투 알림: 유저 피드백 "적 공격이 정신없다" → 이긴 전투(자동사냥 킬·수성 승리)는 토스트만, 진 전투만 일시정지+모달.
+  if(r.enemyBattle){ const b=r.enemyBattle;
+    const pWon=(b.w==="A"&&b.aSide==="P")||(b.w==="B"&&b.aSide==="E");
+    if(pWon||b.w==="draw"){ toast(`⚔ ${b.result.split('·').slice(0,2).join('·').trim()}`); }   // 승리·무승부 → 흐름 안 끊고 토스트
+    else { rtPause(); showBattleModal(b); }   // 패배(부대 전멸/수도 위기)만 멈추고 모달로 확인
+  }
   if(r.worldEvent){ rtPause(); showWorldEventModal(r.worldEvent); }   // 정복/함락/레이드(A3) — 진행 이벤트로 안내, 게임은 계속
   else if(r.seasonEvent) showThreatBanner(r.seasonEvent.type==="warning"
     ? `⚠ ${r.seasonEvent.arriveIn}턴 후 시즌 대침공(${r.seasonEvent.count}차) 예고!${r.seasonEvent.previewUnit?` 예상 주력: ${r.seasonEvent.previewUnit}`:""}`

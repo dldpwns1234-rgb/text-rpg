@@ -120,6 +120,8 @@
   // TIER_MAX=5는 절대 상한(플레이어). T4·T5는 마일스톤 해금 전엔 tierCap(g)이 3으로 묶어 못 올림(병종 정체 해소).
   // AI는 별도 AI_TIER_MAX=3으로 고정 — 마일스톤 해금과 무관하게 턴 기반 성장만 함(플레이어 해금 전에 AI가 T5를 먼저 찍는 불균형 방지).
   const TIER_MAX=5, AI_TIER_MAX=3, TIER_NAME={1:"기본",2:"정예",3:"상급",4:"전설",5:"신화"};
+  // 유닛 훈련 소요(buildRate 1 기준 틱). 고티어일수록 오래 걸림 → 병력 폭증·식량 급감 완화, 고티어가 진짜 투자가 됨.
+  const TRAIN_TICKS={1:2,2:4,3:7,4:11,5:16};
   // 복합 키: T1은 순수 이름, T2+는 "이름@T2" (기존 저장구조 하위호환)
   const uk=(name,tier)=>(tier&&tier>1)?name+"@T"+tier:name;
   const baseOf=k=>{const i=k.indexOf("@T");return i<0?k:k.slice(0,i);};
@@ -154,12 +156,13 @@
   const SEASON_INTERVAL=60, SEASON_MIN_INTERVAL=30, SEASON_WARN_LEAD=12, SEASON_BASE=30, SEASON_GROWTH=0.35;
   // 다수 세력(B1, 성 없는 방식): 자기 성·영토 없이 야생 타일에서 등장해 독자적 주기로 습격하는 독립 세력들.
   // side는 여전히 "E"(정복/함락 판정을 그대로 재사용) — 이름·병종 편향·주기로만 서로 다른 위협처럼 느껴지게 함.
+  // 주기(interval): 유저 피드백 "적 공격이 정신없이 계속 들어온다" → 3세력+시즌+AI원정대가 겹쳐 쏟아지던 걸 완화하려 주기를 크게 늘림(45/65/50 → 72/96/80).
   const FACTIONS=[
-    {id:"raider",   name:"도적단",   units:["경기병","중기병"],interval:45,base:12,growth:0.22},
-    {id:"horde",    name:"오크 군세", units:["중갑보병","창병"],interval:65,base:15,growth:0.25},
+    {id:"raider",   name:"도적단",   units:["경기병","중기병"],interval:72,base:12,growth:0.22},
+    {id:"horde",    name:"오크 군세", units:["중갑보병","창병"],interval:96,base:15,growth:0.25},
     // prey형: 성이 아니라 야외에 나가있는 아군 부대(채집대 등)를 노림 — "그냥 다 성으로 몰려온다"는 반복감을 깨고,
     // 채집·원정 나간 부대를 방치하면 위험하다는 새로운 판단(호위/철수)을 만듦.
-    {id:"nightraid",name:"야습대",   units:["장궁병","석궁병"],interval:50,base:10,growth:0.2,prey:true},
+    {id:"nightraid",name:"야습대",   units:["장궁병","석궁병"],interval:80,base:10,growth:0.2,prey:true},
   ];
 
   const RESEARCH={
@@ -267,7 +270,7 @@
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:{},autoProduce:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
+    castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
     raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -585,16 +588,20 @@
     const c=costOf(u,tier),tot={};for(const r in c)tot[r]=c[r]*qty;
     if(!canAfford(g,tot))return"자원 부족"; pay(g,tot); const key=uk(u,tier);
     const q=g.castle.queue[b]=g.castle.queue[b]||[]; for(let i=0;i<qty;i++)q.push(key); return null;}
-  // F1: 병영별 독립 훈련 — 건물마다 자기 큐를 buildRate(g)만큼 동시에 소비(병영 3개면 최대 3배 산출)
-  function tickProduction(g){ if(g.starving) return; const rate=buildRate(g);
-    for(const b in g.castle.queue){ let made=rate; const q=g.castle.queue[b];
-      while(made>0&&q.length){ const u=q.shift(); g.castle.garrison[u]=(g.castle.garrison[u]||0)+1; made--; } } }
-  // G-C: 자동 생산 — 반복생산 설정된 건물의 큐를 매 틱 buildRate만큼 채움(자원이 되는 한). 자원→병력→국력 전환 → "눌러놓으면 자란다".
-  // 자원 부족 시 produce가 에러 반환 → 조용히 멈춤(성장이 자원에 자연 게이트). offlineStep에도 연결(오프라인 성장은 경제/생산이라 OK).
-  function autoProduceTick(g){ const ap=g.castle.autoProduce; if(!ap||g.starving) return; const rate=Math.max(1,buildRate(g));
+  // F1+생산시간: 병영별 독립 훈련. 각 건물이 매 틱 buildRate만큼 '훈련 진행도'를 쌓고, 큐 맨 앞 유닛의 소요(TRAIN_TICKS)를 채우면 완성.
+  // 고티어일수록 오래 걸려 병력이 천천히 늘고 식량도 완만히 소모됨(유저 피드백: 매 틱 마구 생산되어 식량 급감).
+  const trainCost=key=>TRAIN_TICKS[tierOf(key)]||2;
+  function tickProduction(g){ if(g.starving) return; const rate=buildRate(g); g.castle.trainProg=g.castle.trainProg||{};
+    for(const b in g.castle.queue){ const q=g.castle.queue[b]; if(!q||!q.length){ g.castle.trainProg[b]=0; continue; }
+      let prog=(g.castle.trainProg[b]||0)+rate, guard=0;
+      while(q.length && guard++<50){ const key=q[0], cost=trainCost(key); if(prog<cost) break; prog-=cost; q.shift(); g.castle.garrison[key]=(g.castle.garrison[key]||0)+1; }
+      g.castle.trainProg[b]=q.length?prog:0; } }
+  // G-C: 자동 생산 — 반복생산 건물의 큐를 얕게(≤2) 유지(자원이 되는 한). 생산시간 도입으로 큐가 천천히 소모되므로 선불 백로그를 얕게 둠.
+  // 자원 부족 시 produce가 에러 반환 → 조용히 멈춤. offlineStep에도 연결(오프라인 성장은 경제/생산이라 OK).
+  function autoProduceTick(g){ const ap=g.castle.autoProduce; if(!ap||g.starving) return;
     for(const b in ap){ const spec=ap[b]; if(!spec) continue;
       const q=g.castle.queue[b]=g.castle.queue[b]||[]; let guard=0;
-      while(q.length<rate && guard++<30){ if(produce(g,spec.u,1,spec.tier)) break; } } }
+      while(q.length<2 && guard++<5){ if(produce(g,spec.u,1,spec.tier)) break; } } }
   // 반복생산 토글: 같은 (건물,병종,티어) 재설정 시 해제. 다른 병종이면 교체.
   function setAutoProduce(g,building,u,tier){ g.castle.autoProduce=g.castle.autoProduce||{};
     const cur=g.castle.autoProduce[building];
@@ -934,7 +941,7 @@
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
     MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,rallyToDefense,
-    produce,setAutoProduce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
+    produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
   if(typeof module!=="undefined"&&module.exports) module.exports=API; else global.Game=API;
