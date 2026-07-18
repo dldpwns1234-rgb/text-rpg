@@ -328,13 +328,13 @@ function attach(){
       const {dist}=dijkstra(sel.node,99);
       if(dist[a.node]!==undefined){ stageMove(a.node); return; }
     }
-    state.pendingMove=null; state.selected={kind:"army",id:a.id}; openSheet(); render();});
+    state.pendingMove=null; state.selected={kind:"army",id:a.id}; render();});
   svg.querySelectorAll('[data-go]').forEach(c=>c.onclick=e=>{e.stopPropagation();stageMove(c.dataset.go);});
   svg.querySelectorAll('[data-node]').forEach(c=>c.onclick=e=>{e.stopPropagation();
     const sel=state.selected?.kind==="army"?A(state.selected.id):null;
     if(sel && sel.side==="P"){ const {dist}=dijkstra(sel.node,99);
       if(dist[c.dataset.node]!==undefined && c.dataset.node!==sel.node){ stageMove(c.dataset.node); return; } }
-    state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node}; openSheet(); render();});
+    state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node}; render();});
 }
 function stageMove(target){ // 1단계: 목적지 미리보기 (확정 전엔 명령 안 내림)
   if(state.over) return;
@@ -571,7 +571,7 @@ function rtSync(){ const pb=document.getElementById('rtPlay'); if(!pb)return;
   w.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>rtSetSpeed(+b.dataset.spd));
 })();
 document.getElementById('endturn').onclick=stepTurn;
-document.getElementById('castleBtn').onclick=()=>{state.pendingMove=null;state.selected={kind:"node",id:"P"};openSheet();render();};
+document.getElementById('castleBtn').onclick=()=>{state.pendingMove=null;state.selected={kind:"node",id:"P"};render();};
 svg.addEventListener('click',()=>{state.selected=null;state.pendingMove=null;state.mode="normal";closeSheet();render();});
 // ---- 바텀시트(모바일) — 부대/성 선택 시 자동으로 펼침, 지도 배경 탭·손잡이 탭으로 접음. 데스크톱은 CSS가 무시(항상 펼침 레이아웃).
 function openSheet(){ document.getElementById('panel')?.classList.add('sheetOpen'); }
@@ -588,15 +588,18 @@ let resetMapPan=()=>{};
     const minX=Math.min(0,bw-sw), minY=Math.min(0,bh-sh);
     pan.x=Math.max(minX,Math.min(0,pan.x)); pan.y=Math.max(minY,Math.min(0,pan.y)); };
   resetMapPan=()=>{ pan={x:0,y:0}; apply(); };
-  const startDrag=(id,x,y)=>{ drag={id,x,y,ox:pan.x,oy:pan.y,moved:false}; };
+  const startDrag=(id,x,y,pid)=>{ drag={id,x,y,ox:pan.x,oy:pan.y,moved:false,pid}; };
+  // 실제로 임계 이상 움직였을 때만 setPointerCapture — 즉시 잡으면 순수 탭(드래그 없음)의 click이
+  // 항상 box로 리다이렉트되어 타일/부대 클릭이 전부 씹히는 버그가 됐었음(포인터 캡처 사양상 부작용).
   const moveDrag=(id,x,y)=>{ if(!drag||drag.id!==id) return;
     const dx=x-drag.x, dy=y-drag.y;
-    if(Math.abs(dx)>4||Math.abs(dy)>4) drag.moved=true;
-    pan.x=drag.ox+dx; pan.y=drag.oy+dy; clamp(); apply(); };
+    if(!drag.moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ drag.moved=true;
+      if(drag.pid!=null){ try{box.setPointerCapture(drag.pid);}catch(err){} } }
+    if(drag.moved){ pan.x=drag.ox+dx; pan.y=drag.oy+dy; clamp(); apply(); } };
   const endDrag=id=>{ if(drag&&drag.id===id&&drag.moved){ const swallow=ev=>{ev.stopPropagation();ev.preventDefault();box.removeEventListener('click',swallow,true);};
     box.addEventListener('click',swallow,true); } if(!drag||drag.id===id) drag=null; };
   // 포인터 이벤트(실제 터치·마우스 — 대부분의 브라우저가 여기로 통합) + 레거시 마우스 이벤트(구형/일부 자동화 환경 폴백).
-  box.addEventListener('pointerdown',e=>{ startDrag('p',e.clientX,e.clientY); try{box.setPointerCapture(e.pointerId);}catch(err){} });
+  box.addEventListener('pointerdown',e=>{ startDrag('p',e.clientX,e.clientY,e.pointerId); });
   box.addEventListener('pointermove',e=>moveDrag('p',e.clientX,e.clientY));
   box.addEventListener('pointerup',()=>endDrag('p')); box.addEventListener('pointercancel',()=>endDrag('p'));
   box.addEventListener('mousedown',e=>{ if(!drag) startDrag('m',e.clientX,e.clientY); });
