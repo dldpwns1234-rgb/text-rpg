@@ -637,6 +637,16 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     if(g.rivals) for(const r of g.rivals){ const t=RIVALS.find(x=>x.id===r.id); list.push({id:r.id,name:t?t.name:r.id,bias:t&&t.bias,might:Math.round(r.might)}); }
     list.sort((a,b)=>b.might-a.might); return list; }
   const myRank=g=>continentalRankings(g).findIndex(x=>x.me)+1;
+  // I2: 웨이브 정체성 + 격파→순위. 강한 라이벌일수록 자주 공격, 그 원정대를 꺾으면 해당 라이벌 국력이 깎여 순위↑.
+  const RIVAL_HIT=1.0;   // 격파한 웨이브 병력 1당 라이벌 국력 감소량
+  const rivalName=rid=>{const t=RIVALS.find(x=>x.id===rid);return t?t.name:null;};
+  function pickAggressorRival(g){ if(!g.rivals||!g.rivals.length) return null;
+    const ranked=[...g.rivals].sort((a,b)=>b.might-a.might);
+    const pool=ranked.slice(0, Math.max(1,Math.ceil(ranked.length/2)));   // 상위 절반(강한 라이벌)에서 선택
+    return pool[Math.floor(Math.random()*pool.length)].id; }
+  function damageRival(g,rid,amount){ if(!g.rivals) return null; const r=g.rivals.find(x=>x.id===rid); if(!r) return null;
+    const dmg=amount*RIVAL_HIT; r.might=Math.max(0, r.might-dmg); g.rivalKills=(g.rivalKills||0)+1;
+    return {name:rivalName(rid)||rid, amount:Math.round(dmg)}; }
 
   // ---- 연구 버프 → 전투 mods ----
   function researchMods(g){const m={};
@@ -723,10 +733,12 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     if(res.w==="A"){ attacker.comp=rA; const wd=wound(attacker,beforeA,rA,aHero);
       let rw=grantMonsterReward(g,defender,node,sum);   // 몬스터 처치 보상(추출 헬퍼 — 오프라인 사냥과 공용)
       if(attacker.side==="P"&&defender.side==="E") rw+=threatKillReward(g,defender,sum);   // G-D: 야전에서 적 위협군 격파
+      if(attacker.side==="P"&&defender.rival){ const rh=damageRival(g,defender.rival,troops(defender)); if(rh){sum.rivalHit=rh;rw+=` · ${rh.name} 국력 -${rh.amount}`;} }   // I2: 라이벌 격파→순위
       sum.result=`${attacker.name} ${defender.side==="M"?"소탕 성공":"승리"} · ${defender.name} ${defender.side==="M"?"소멸":"전멸"}${rw}`+(wd?` · 부상 ${wd}`:"");
       removeArmy(g,defender); attacker.node=node; }
     else if(res.w==="B"){ defender.comp=rB; const wd=wound(defender,beforeB,rB,dHero);
       let rw2=""; if(defender.side==="P"&&attacker.side==="E") rw2=threatKillReward(g,attacker,sum);   // G-D: 수성/야전 수비 승리로 적 위협군 격퇴
+      if(defender.side==="P"&&attacker.rival){ const rh=damageRival(g,attacker.rival,troops(attacker)); if(rh){sum.rivalHit=rh;rw2+=` · ${rh.name} 국력 -${rh.amount}`;} }   // I2: 라이벌 격파→순위
       sum.result=`${defender.name} 방어 · ${attacker.name} 전멸${rw2}`+(wd?` · 부상 ${wd}`:""); removeArmy(g,attacker); }
     else { attacker.comp=rA; defender.comp=rB; wound(attacker,beforeA,rA,aHero); wound(defender,beforeB,rB,dHero); sum.result="무승부 · 양측 생존"; }
     return sum;
@@ -1032,7 +1044,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const gapOk=(g.turn-(g.ai.lastWave??-99))>=(AI.waveGap||0);
     if(waves<(AI.waveCap||2)&&!grace&&gapOk){
       if(bossAlive&&!raiding&&troops(home)>=40){ detach(g,home,Math.floor(troops(home)*0.7),"적 레이드대","attack","ANCIENT"); g.ai.lastWave=g.turn; }
-      else if(troops(home)>=AI.waveSize){ detach(g,home,Math.floor(troops(home)*(AI.waveFrac||0.7)),"적 원정대","attack",pickAITarget(g)); g.ai.lastWave=g.turn; }
+      else if(troops(home)>=AI.waveSize){ const rid=pickAggressorRival(g), nm=rivalName(rid); const e=detach(g,home,Math.floor(troops(home)*(AI.waveFrac||0.7)),nm?`${nm}의 원정대`:"적 원정대","attack",pickAITarget(g)); if(e)e.rival=rid; g.ai.lastWave=g.turn; }   // I2: 라이벌 스폰서
     }
     for(const e of g.armies.filter(a=>a.side==="E"&&a.role==="attack")){ orderMove(g,e.id,e.target||"P"); }   // 목적지만 지정, 이동은 moveTick
     return null;
@@ -1049,7 +1061,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
       const cu=s.previewUnit||playerCounterUnit(g), t=aiTierOf(g), comp={};
       for(let i=0;i<need;i++){ const u=pickAIUnit(cu), key=uk(u,t); comp[key]=(comp[key]||0)+1; }
       const target=pickAITarget(g);
-      const e={id:newId(g,"ES"),side:"E",node:"E",mp:0,maxMp:0,name:`시즌 대침공 ${s.count}차`,comp,hero:null,role:"attack",target};
+      const rid=pickAggressorRival(g), nm=rivalName(rid);   // I2: 시즌 대침공도 라이벌이 주도
+      const e={id:newId(g,"ES"),side:"E",node:"E",mp:0,maxMp:0,name:`${nm?nm+"의 ":""}시즌 대침공 ${s.count}차`,comp,hero:null,role:"attack",target,rival:rid};
       g.armies.push(e); orderMove(g,e.id,target);
       const done=s.count; s.count++;
       const interval=Math.max(SEASON_MIN_INTERVAL, SEASON_INTERVAL-3*(s.count-1));
@@ -1277,7 +1290,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,armyCapFor,
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
-    RIVALS,rivalTick,continentalRankings,myRank,threatMul,
+    RIVALS,rivalTick,continentalRankings,myRank,threatMul,pickAggressorRival,damageRival,
     DRAGON_STAGES,DRAGON_SKILLS,dragonTick,investDragonSkill,assignDragon,dragonLoc,
     LORD_TALENTS,EQUIPMENT,EQUIP_SLOTS,ENHANCE_MULT,lordTick,investTalent,craftEquipment,enhanceEquipment,equipItem,unequipItem,lordXPNeed,enhanceCost,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
