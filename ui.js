@@ -119,8 +119,12 @@ function renderInfoAccordion(){
     ${open?body:""}
   </div>`;
 }
+let _lastSelKey=null;   // 새 선택에만 바텀시트를 자동 펼침(선택 유지 중 실시간 재생 틱마다 재열림 방지 — 수동으로 접은 걸 무시하면 안 됨)
 function renderPanel(){
   const p=document.getElementById('panelBody'); const s=state.selected;
+  const selKey=s?`${s.kind}:${s.id}`:null;
+  if(selKey && selKey!==_lastSelKey) openSheet();   // 모바일: 새로 부대/성을 선택하면 바텀시트 자동 펼침 — 유저 피드백: 매번 열고 스크롤해야 해서 불편(그동안 openSheet가 실제로 호출되는 곳이 없던 결함)
+  _lastSelKey=selKey;
   let h=renderInfoAccordion();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();

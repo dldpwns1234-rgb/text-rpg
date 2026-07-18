@@ -13,8 +13,9 @@
   h1{font-size:18px;margin:0 0 8px;}
   .top{position:relative;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
     border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px;}
+  .resbar{display:flex;gap:6px;flex-wrap:wrap;}
   .res{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);
-    border-radius:8px;padding:4px 9px;font-variant-numeric:tabular-nums;}
+    border-radius:8px;padding:4px 9px;font-variant-numeric:tabular-nums;flex-shrink:0;}
   .res .inc{color:var(--green);font-size:12px;}
   button{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
     padding:6px 12px;font-size:13px;cursor:pointer;font-weight:600;}
@@ -36,7 +37,11 @@
     button{min-height:42px;}
     .prodrow{padding:7px 0;}
     select,input[type=number]{min-height:38px;font-size:14px;padding:5px;}
-    .res{padding:6px 10px;}
+    .top{padding:6px 8px;gap:5px 6px;}
+    .resbar{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+      scrollbar-width:none;-ms-overflow-style:none;padding-bottom:2px;}   /* 자원칸 한 줄 가로 스크롤(3줄→1줄, 유저 피드백: 상단이 자리를 너무 차지) */
+    .resbar::-webkit-scrollbar{display:none;}
+    .res{padding:4px 7px;font-size:12px;}
     #menuBtn{display:inline-block;}
     .menu-drop{position:absolute;top:100%;right:12px;margin-top:4px;background:var(--card);
       border:1px solid var(--line);border-radius:10px;padding:8px;flex-direction:column;z-index:16;
@@ -81,7 +86,7 @@
 <h1>🏰 Phase C — 타일 그리드 (14×9, game.js 재사용)</h1>
 <div class="top">
   <span class="k">턴 <b id="turn" style="color:var(--gold)">1</b></span>
-  <span id="resbar" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+  <span id="resbar" class="resbar"></span>
   <span id="moveConfirm"></span>
   <span style="flex:1"></span>
   <div id="menuDrop" class="menu-drop hidden">
@@ -1597,8 +1602,12 @@ function renderInfoAccordion(){
     ${open?body:""}
   </div>`;
 }
+let _lastSelKey=null;   // 새 선택에만 바텀시트를 자동 펼침(선택 유지 중 실시간 재생 틱마다 재열림 방지 — 수동으로 접은 걸 무시하면 안 됨)
 function renderPanel(){
   const p=document.getElementById('panelBody'); const s=state.selected;
+  const selKey=s?`${s.kind}:${s.id}`:null;
+  if(selKey && selKey!==_lastSelKey) openSheet();   // 모바일: 새로 부대/성을 선택하면 바텀시트 자동 펼침 — 유저 피드백: 매번 열고 스크롤해야 해서 불편(그동안 openSheet가 실제로 호출되는 곳이 없던 결함)
+  _lastSelKey=selKey;
   let h=renderInfoAccordion();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
