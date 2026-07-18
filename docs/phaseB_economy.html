@@ -407,7 +407,9 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const STATNAME={atk:"공격",df:"방어",hp:"체력"};
   // 시간 기반 이동으로 수비가 강해져(웨이브가 느리게 도착) 구값(waveSize30)은 AI 무력화 → 상향.
   // ws40이면 AI 100%(과함), ws38이면 ~40%(명확한 위협+능동 방어로 극복 가능). §10 밸런스 참조.
-  const AI={budgetPerTurn:5,waveSize:38,homeCap:70,tierEvery:16,waveCap:2,waveFrac:0.85}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
+  // 유저 피드백: "적이 초반부터 너무 많이 쳐들어온다"(실시간 2x/4x면 30턴이 순식간). 초반 유예(graceTurns) 동안은
+  // 예산을 낮추고(graceBudget) 본대 비축을 waveSize로 제한해 첫 웨이브가 늦게·과대화 없이 오게 하고, waveGap으로 웨이브 간 최소 간격을 둠.
+  const AI={budgetPerTurn:5,waveSize:38,homeCap:70,tierEvery:16,waveCap:2,waveFrac:0.85,graceTurns:30,graceBudget:2,waveGap:16}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
   // 시즌형 침공(B2): N턴마다 예고→도래하는 대규모 원정대. 도래마다 간격이 줄고(escalating) 규모가 커짐(횟수·국력 둘 다 반영).
   const SEASON_INTERVAL=60, SEASON_MIN_INTERVAL=30, SEASON_WARN_LEAD=12, SEASON_BASE=30, SEASON_GROWTH=0.35;
   // 다수 세력(B1, 성 없는 방식): 자기 성·영토 없이 야생 타일에서 등장해 독자적 주기로 습격하는 독립 세력들.
@@ -527,7 +529,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
     castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
-    research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
+    research:{done:{},active:null,tab:"전투"}, ai:{budget:0,lastWave:-99},
     raid:{need:4,holder:null,holdTurns:0,cleared:false,settled:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
     milestones:{done:[],idx:0,unlocked:[]},   // 마일스톤 진행(A2)
@@ -967,18 +969,21 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const e={id:newId(g,role==="attack"&&target==="ANCIENT"?"ER":"EA"),side:"E",node:"E",mp:4,maxMp:4,name,comp:atk,hero:null,role,target};
     g.armies.push(e); return e;}
   function aiTurn(g){
-    g.ai.budget+=AI.budgetPerTurn+Math.min(3,Math.floor(g.turn/14));   // 후반 눈덩이 완화(긴 판 대응)
+    const grace=g.turn<(AI.graceTurns||0);   // 초반 유예: 예산 낮추고 비축 제한(첫 웨이브 지연·과대화 방지)
+    g.ai.budget+=(grace?AI.graceBudget:AI.budgetPerTurn)+Math.min(3,Math.floor(g.turn/14));   // 후반 눈덩이 완화(긴 판 대응)
     let home=g.armies.find(a=>a.side==="E"&&a.node==="E"&&a.role!=="attack");
     if(!home){home={id:newId(g,"EH"),side:"E",node:"E",mp:0,maxMp:0,name:"적 본대",comp:{},hero:null,role:"home"};g.armies.push(home);}
     const cu=playerCounterUnit(g), t=aiTierOf(g); let guard=0;
-    while(guard++<60&&troops(home)<AI.homeCap){const u=pickAIUnit(cu),c=AI_UNIT_COST[u]*t;if(g.ai.budget<c)break;g.ai.budget-=c;const key=uk(u,t);home.comp[key]=(home.comp[key]||0)+1;}
-    // 동시 원정대 수 제한(§9 부대 수 상한 대칭) — 무한 웨이브 방지
+    const buildCap=grace?Math.min(AI.homeCap,AI.waveSize):AI.homeCap;   // 유예 중엔 waveSize까지만 비축 → 유예 해제 직후 거대 웨이브 방지
+    while(guard++<60&&troops(home)<buildCap){const u=pickAIUnit(cu),c=AI_UNIT_COST[u]*t;if(g.ai.budget<c)break;g.ai.budget-=c;const key=uk(u,t);home.comp[key]=(home.comp[key]||0)+1;}
+    // 동시 원정대 수 제한(§9 부대 수 상한 대칭) — 무한 웨이브 방지 + waveGap으로 웨이브 간 최소 간격
     const waves=g.armies.filter(a=>a.side==="E"&&a.role==="attack").length;
     const bossAlive=armiesAt(g,"ANCIENT").some(a=>a.side==="M");
     const raiding=g.armies.some(a=>a.side==="E"&&a.target==="ANCIENT");
-    if(waves<(AI.waveCap||2)){
-      if(bossAlive&&!raiding&&troops(home)>=40) detach(g,home,Math.floor(troops(home)*0.7),"적 레이드대","attack","ANCIENT");
-      else if(troops(home)>=AI.waveSize) detach(g,home,Math.floor(troops(home)*(AI.waveFrac||0.7)),"적 원정대","attack",pickAITarget(g));
+    const gapOk=(g.turn-(g.ai.lastWave??-99))>=(AI.waveGap||0);
+    if(waves<(AI.waveCap||2)&&!grace&&gapOk){
+      if(bossAlive&&!raiding&&troops(home)>=40){ detach(g,home,Math.floor(troops(home)*0.7),"적 레이드대","attack","ANCIENT"); g.ai.lastWave=g.turn; }
+      else if(troops(home)>=AI.waveSize){ detach(g,home,Math.floor(troops(home)*(AI.waveFrac||0.7)),"적 원정대","attack",pickAITarget(g)); g.ai.lastWave=g.turn; }
     }
     for(const e of g.armies.filter(a=>a.side==="E"&&a.role==="attack")){ orderMove(g,e.id,e.target||"P"); }   // 목적지만 지정, 이동은 moveTick
     return null;
@@ -1887,6 +1892,7 @@ function applySave(data){
   state.milestones=state.milestones||{done:[],idx:0,unlocked:[]};   // 구버전 세이브 호환(A2)
   state.raidBossGen=state.raidBossGen||0;
   if(state.raid) state.raid.settled=state.raid.settled||false;   // 구버전 세이브 호환 — 고대성 점거 1회 발동 플래그
+  state.ai=state.ai||{budget:0}; if(state.ai.lastWave==null)state.ai.lastWave=-99;   // 구버전 세이브 호환 — 웨이브 간격 추적
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
   state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
