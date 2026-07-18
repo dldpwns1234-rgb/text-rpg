@@ -177,7 +177,7 @@
   ];
   let threatMul=g=>1;   // 위협 등반 계수(I4에서 시즌 회차·랭크 기반으로 확장). I1~I3에선 1(무영향).
   // 경쟁 시즌(I3): 대침공 스케줄러 g.season과 별개. 성과 점수→티어→보상, 소프트리셋 후 새 시즌(비종결).
-  const RANK_SEASON_LEN=180, RANK_SOFTRESET=0.35;
+  const RANK_SEASON_LEN=180, RANK_SOFTRESET=0.35, THREAT_CAP=1.5;
   const RANK_TIERS=[
     {id:"bronze", name:"브론즈",   min:0},   {id:"silver", name:"실버",     min:120},
     {id:"gold",   name:"골드",     min:280}, {id:"plat",   name:"플래티넘", min:480},
@@ -187,6 +187,8 @@
   const rankTierIndex=g=>RANK_TIERS.findIndex(x=>x.id===tierForScore((g.rankSeason&&g.rankSeason.score)||0).id);
   const rankTierReward=idx=>{ const m=idx+1; return {식량:60*m, 철:35*m, 목재:35*m, 재료:2*m, 설계도:idx}; };
   function addSeasonScore(g,amt){ if(g.rankSeason&&amt>0) g.rankSeason.score=(g.rankSeason.score||0)+amt; }
+  // I4: 위협 등반 계수 — 시즌 회차 위주 + 랭크 티어 소액 가중 + 상한(폭주·sim붕괴 방지). seasonTick/factionTick/rivalTick need에 곱해짐.
+  threatMul=g=>{ const sn=(g.rankSeason&&g.rankSeason.num)||1, ti=Math.max(0,rankTierIndex(g)); return Math.min(THREAT_CAP, 1 + 0.06*(sn-1) + 0.03*ti); };
 
   const RESEARCH={
     "축성술":{cat:"전투",sub:"공성·수성",req:[],cost:{목재:15,철:15},turns:2,desc:"내 성 수비 +15%"},
@@ -828,7 +830,7 @@
     // 예고 시점에 예상 주력 병종을 미리 뽑아 저장 → 도래 때도 같은 값을 써서 예고와 실제가 일치하게(§6 핵심가설: 상성 맞춰 대비).
     if(!s.warned && g.turn>=s.warnAt){ s.warned=true; s.previewUnit=playerCounterUnit(g); return {type:"warning",count:s.count,arriveIn:s.next-g.turn,previewUnit:s.previewUnit}; }
     if(g.turn>=s.next){
-      const need=Math.round(Math.max(SEASON_BASE*(1+SEASON_GROWTH*(s.count-1)), computeMight(g)*0.22));
+      const need=Math.round(Math.max(SEASON_BASE*(1+SEASON_GROWTH*(s.count-1)), computeMight(g)*0.22)*threatMul(g));   // I4: 위협 등반
       const cu=s.previewUnit||playerCounterUnit(g), t=aiTierOf(g), comp={};
       for(let i=0;i<need;i++){ const u=pickAIUnit(cu), key=uk(u,t); comp[key]=(comp[key]||0)+1; }
       const target=pickAITarget(g);
@@ -849,7 +851,7 @@
     const events=[];
     for(const fs of g.factions){
       const f=FACTIONS.find(x=>x.id===fs.id); if(!f||g.turn<fs.next) continue;
-      const need=Math.round(f.base*(1+f.growth*(fs.count-1))*(1-dragonSkillSum(g,"factionReduce")));   // 위압의 포효(드래곤 스킬)
+      const need=Math.round(f.base*(1+f.growth*(fs.count-1))*(1-dragonSkillSum(g,"factionReduce"))*threatMul(g));   // 위압의 포효(드래곤) + I4 위협 등반
       const t=aiTierOf(g), comp={};
       for(let i=0;i<need;i++){ const u=f.units[Math.floor(Math.random()*f.units.length)], key=uk(u,t); comp[key]=(comp[key]||0)+1; }
       const node=randomTile(g)||"E";
