@@ -31,9 +31,15 @@ function renderMilestone(){
 function renderSeason(){
   const s=state.season; if(!s) return "";
   const left=Math.max(0,s.next-state.turn);
+  const hint=s.warned&&s.previewUnit?` · 예상 주력 <b>${s.previewUnit}</b>`:"";
   return `<div style="background:var(--bg);border:1px solid ${s.warned?'var(--red)':'var(--line)'};border-radius:10px;padding:8px 10px;margin-bottom:10px">
-    <div style="font-size:11px;color:${s.warned?'#fca5a5':'#94a3b8'}">${s.warned?"⚠ 대침공 예고!":"🗓 다음 시즌"} <b>${s.count}차</b> <span class="k">— ${left}턴 후 도착</span></div>
+    <div style="font-size:11px;color:${s.warned?'#fca5a5':'#94a3b8'}">${s.warned?"⚠ 대침공 예고!":"🗓 다음 시즌"} <b>${s.count}차</b> <span class="k">— ${left}턴 후 도착</span>${hint}</div>
   </div>`;
+}
+// 🏴 알려진 습격 세력 — 이름·주력 병종을 상시 표시(정보 없이 오는 위협이 아니게).
+function renderFactionInfo(){
+  if(!Game.FACTIONS||!Game.FACTIONS.length) return "";
+  return `<div style="font-size:10px;color:#64748b;margin:-4px 0 10px 2px">🏴 알려진 습격 세력: ${Game.FACTIONS.map(f=>`${f.name}(${f.units.join("·")}${f.prey?" · 야외 부대 노림":""})`).join(" · ")}</div>`;
 }
 // 🎯 온보딩 퀘스트 — 현재 목표를 패널 최상단에 상시 표시(선택 상태 무관). 데이터는 Game.QUESTS.
 function renderQuests(){
@@ -50,7 +56,7 @@ function renderQuests(){
 }
 function renderPanel(){
   const p=document.getElementById('panel'); const s=state.selected;
-  let h=renderQuests()+renderMilestone()+renderSeason();
+  let h=renderQuests()+renderMilestone()+renderSeason()+renderFactionInfo();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
     const tab=state.castleTab||"건물"; const busy=!!c.build;
@@ -83,9 +89,10 @@ function renderPanel(){
       if(c.buildings.includes(key)){
         const open=c.openBuilding===key, lv=c.blevel[key]||1;
         h+=`<div class="prodrow"><button class="minibtn" data-bld="${key}" style="${open?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${b.icon} ${key} <span class="k">Lv.${lv} · T${lv}</span></button>`;
-        if(lv<TIER_MAX){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
+        const cap=Game.tierCap(state);
+        if(lv<cap){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
           h+=`<span class="cost">${cs}·${Game.buildDur("bld")}T</span><button class="minibtn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
-        } else h+=`<span class="k" style="font-size:11px">최대 T${TIER_MAX}</span>`;
+        } else h+=`<span class="k" style="font-size:11px">최대 T${cap}${cap<TIER_MAX?" (마일스톤 해금 필요)":""}</span>`;
         h+=`</div>`;
       } else {
         const cs=Object.entries(b.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
@@ -444,9 +451,9 @@ function stepTurn(){
   if(r.enemyBattle){ rtPause(); showBattleModal(r.enemyBattle); }   // 전투 → 자동 일시정지 + 관전
   if(r.worldEvent){ rtPause(); showWorldEventModal(r.worldEvent); }   // 정복/함락/레이드(A3) — 진행 이벤트로 안내, 게임은 계속
   else if(r.seasonEvent) toast(r.seasonEvent.type==="warning"
-    ? `⚠ ${r.seasonEvent.arriveIn}턴 후 시즌 대침공(${r.seasonEvent.count}차) 예고!`
+    ? `⚠ ${r.seasonEvent.arriveIn}턴 후 시즌 대침공(${r.seasonEvent.count}차) 예고!${r.seasonEvent.previewUnit?` 예상 주력: ${r.seasonEvent.previewUnit}`:""}`
     : `⚔ 시즌 대침공 ${r.seasonEvent.count}차 도착! 병력 ${r.seasonEvent.troops}`);
-  else if(r.factionEvents&&r.factionEvents.length) toast(`⚔ ${r.factionEvents.map(e=>`${e.faction} 습격대 등장(병력 ${e.troops})`).join(" · ")}`);
+  else if(r.factionEvents&&r.factionEvents.length) toast(`⚔ ${r.factionEvents.map(e=>`${e.faction} 습격대 등장(병력 ${e.troops})${e.target&&e.target!=="P"?` — ${NODES[e.target]?.name||e.target} 노림!`:""}`).join(" · ")}`);
   else if(r.msCompleted&&r.msCompleted.length) toast(`🏅 마일스톤 달성: ${r.msCompleted[r.msCompleted.length-1].name}!`);
   else if(r.questsCompleted&&r.questsCompleted.length) toast(`🎯 목표 달성: ${r.questsCompleted[r.questsCompleted.length-1].name}!`);
   else if(r.built) toast(`🏗 ${r.built} 완성!`);
