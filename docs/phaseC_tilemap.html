@@ -320,6 +320,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function costOf(name,tier){tier=tier||1;const base=UNIT_COST[name],mul=1+0.6*(tier-1),c={};
     for(const r in base)c[r]=Math.round(base[r]*mul);c.철=(c.철||0)+2*(tier-1);return c;}
   const CASTLE_UP_COST={목재:20,석재:15,철:10};
+  const SIEGE_COST={목재:30,철:40};   // 파성추(C3) — 신규 유닛 아닌 소모성 제작품. 공성 시 성벽 보정을 추가로 완화(엔진 밸런스 무영향).
   const BUILDINGS={ "병영":{cost:{목재:15,석재:10,철:5},units:["중갑보병","창병"],icon:"🛡"},
     "궁수대":{cost:{목재:15,석재:5,철:10},units:["장궁병","석궁병"],icon:"🏹"},
     "마구간":{cost:{목재:10,석재:10,철:15},units:["경기병","중기병"],icon:"🐎"} };
@@ -429,7 +430,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:[],buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null},
+    castle:{level:1,queue:[],buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
     raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -528,7 +529,10 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     let aB=aHero?GRADE_BUFF[aHero.grade]+traitSum(aHero,"atkBonus"):0, dB=dHero?GRADE_BUFF[dHero.grade]+traitSum(dHero,"defBonus"):0;
     const dragonBuff=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff;   // 드래곤(C1) — 영웅과 별개로 가산, 알 단계는 0이라 자동 무효
     if(attacker.dragon) aB+=dragonBuff; if(defender.dragon) dB+=dragonBuff;
-    if(fort){ dB+=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22; if(defender.side==="P"&&hasR(g,"축성술"))dB+=0.15; }
+    let siegeUsed=false;
+    if(fort){ let fortDef=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22;
+      if(attacker.side==="P" && (g.castle.siegeItems||0)>0){ g.castle.siegeItems--; fortDef=Math.max(0,fortDef-0.10); siegeUsed=true; }   // 파성추(C3) 소모
+      dB+=fortDef; if(defender.side==="P"&&hasR(g,"축성술"))dB+=0.15; }
     if(node==="P"&&defender.side==="P") dB+=Math.min(wallMaxLv(g)*0.05,(g.castle.wall||0)*0.05);  // 성벽 보강
     if(ancientHold) dB+=0.20;
     if(attacker.side==="E") aB+=aiCombatBuff(g);   // AI 지휘관 정예화
@@ -541,7 +545,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const rebuild=s=>{const c={};for(const x of last[s])if(x.alive>0)c[x.name]=(c[x.name]||0)+x.alive;return c;};
     const rA=rebuild("A"),rB=rebuild("B");
     const wound=(army,before,after)=>{if(army.side!=="P")return 0;let t=0;for(const u in before){const lost=(before[u]||0)-(after[u]||0);if(lost>0){const w=Math.round(lost*WOUND_RATE);if(w>0){g.castle.wounded[u]=(g.castle.wounded[u]||0)+w;t+=w;}}}return t;};
-    const sum={attacker:attacker.name,defender:defender.name,aSide:attacker.side,fort:fort||ancientHold,w:res.w,survA:res.survA,survB:res.survB,
+    const sum={attacker:attacker.name,defender:defender.name,aSide:attacker.side,fort:fort||ancientHold,w:res.w,survA:res.survA,survB:res.survB,siegeUsed,
       heroA:aHero?aHero.name:null,heroB:dHero?dHero.name:null,
       buffA:aHero?Math.round(aB*100):0, buffB:dHero?Math.round(dB*100):0,
       gradeA:aHero?aHero.grade:0, gradeB:dHero?dHero.grade:0,
@@ -696,6 +700,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function upgradeBuilding(g,key){if(!g.castle.buildings.includes(key))return"미건설";
     const lv=g.castle.blevel[key]||1; if(lv>=tierCap(g))return"최대 레벨(마일스톤 해금 필요)"; return startBuild(g,"bld",key,bUpCost(key,lv),buildDur("bld"),`${key} → T${lv+1}`);}
   function fortifyWall(g){return startBuild(g,"wall",null,wallCost(g.castle.wall||0),buildDur("wall"),"성벽 보강");}
+  // 파성추(C3): 건설 큐를 안 쓰는 즉시 제작 소모품 — 성/경제 업그레이드와 슬롯을 다투지 않음.
+  function craftSiege(g){ if(!canAfford(g,SIEGE_COST))return"자원 부족"; pay(g,SIEGE_COST); g.castle.siegeItems=(g.castle.siegeItems||0)+1; return null; }
   // 승급(C2): 즉시 등급만 올리던 무결정을 "특성 2択" 결정으로 바꿈. promoteHero는 자원 확인 후 후보만 뽑고,
   // 실제 등급 상승·자원 차감은 choosePromoteTrait(선택 확정 시점)에서 일어남.
   function promoteHero(g,hid){const h=heroById(g,hid); if(!h)return"영웅 없음"; if(h.grade>=3)return"이미 최고 등급";
@@ -947,6 +953,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     TIER_MAX,TIER_NAME,tierCap,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTraits,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,
+    SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
     DRAGON_STAGES,dragonTick,assignDragon,dragonLoc,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
@@ -1292,6 +1299,9 @@ function renderPanel(){
     } // ← 선술집 탭 끝
     if(tab==="출전"){
     h+=`<div class="k" style="font-size:11px;margin-bottom:4px">🛡 주둔군은 적의 성 공격 시 자동 수성 참전</div>`;
+    { const sc=Game.SIEGE_COST, cs=Object.entries(sc).map(([r,v])=>`${r[0]}${v}`).join(" ");
+      h+=`<div class="prodrow"><span class="nm">🏹 파성추 <span class="k">보유 ${c.siegeItems||0} · 공성 전투 1회 소모, 성벽 보정 추가 완화</span></span>
+        <span class="cost">${cs}</span><button class="minibtn" id="craftSiege" ${canAfford(sc)?"":"disabled"}>제작</button></div><hr>`; }
     h+=composerHTML();
     { const dt=Object.values(state.castle.draft).reduce((x,y)=>x+y,0);
       h+=`<div style="display:flex;gap:6px;margin-top:6px">
@@ -1400,6 +1410,7 @@ function renderPanel(){
   p.querySelectorAll('[data-hidle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hidle,"idle"));
   p.querySelectorAll('[data-draft]').forEach(b=>b.onclick=()=>draftAdjust(b.dataset.draft,+b.dataset.d));
   const dep=p.querySelector('#deploy'); if(dep) dep.onclick=deploy;
+  const cs=p.querySelector('#craftSiege'); if(cs) cs.onclick=craftSiege;
   const dcl=p.querySelector('#draftClear'); if(dcl) dcl.onclick=()=>{state.castle.draft={};render();};
   const dpt=p.querySelector('#deployTo'); if(dpt) dpt.onclick=()=>deployTo(dpt.dataset.target);
   const dc2=p.querySelector('#draftClear2'); if(dc2) dc2.onclick=()=>{state.castle.draft={};render();};
@@ -1460,6 +1471,7 @@ function produce(u,qty,tier){const m=Game.produce(state,u,qty,tier); const lbl=(
 function construct(key){const m=Game.construct(state,key); toast(m||`🏗 ${key} 건설 시작`); render();}
 function upgradeBuilding(key){const m=Game.upgradeBuilding(state,key); toast(m||`🏗 ${key} 레벨업 시작`); render();}
 function fortifyWall(){const m=Game.fortifyWall(state); toast(m||`🏗 성벽 보강 시작`); render();}
+function craftSiege(){const m=Game.craftSiege(state); toast(m||`🏹 파성추 제작 완료 (보유 ${state.castle.siegeItems})`); render();}
 function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||"승급 특성을 선택하세요"); render();}
 function choosePromoteTrait(hid,traitId){const m=Game.choosePromoteTrait(state,hid,traitId); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
 function draftAdjust(u,d){Game.draftAdjust(state,u,d); render();}

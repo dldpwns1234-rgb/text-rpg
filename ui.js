@@ -192,6 +192,9 @@ function renderPanel(){
     } // ← 선술집 탭 끝
     if(tab==="출전"){
     h+=`<div class="k" style="font-size:11px;margin-bottom:4px">🛡 주둔군은 적의 성 공격 시 자동 수성 참전</div>`;
+    { const sc=Game.SIEGE_COST, cs=Object.entries(sc).map(([r,v])=>`${r[0]}${v}`).join(" ");
+      h+=`<div class="prodrow"><span class="nm">🏹 파성추 <span class="k">보유 ${c.siegeItems||0} · 공성 전투 1회 소모, 성벽 보정 추가 완화</span></span>
+        <span class="cost">${cs}</span><button class="minibtn" id="craftSiege" ${canAfford(sc)?"":"disabled"}>제작</button></div><hr>`; }
     h+=composerHTML();
     { const dt=Object.values(state.castle.draft).reduce((x,y)=>x+y,0);
       h+=`<div style="display:flex;gap:6px;margin-top:6px">
@@ -300,6 +303,7 @@ function renderPanel(){
   p.querySelectorAll('[data-hidle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hidle,"idle"));
   p.querySelectorAll('[data-draft]').forEach(b=>b.onclick=()=>draftAdjust(b.dataset.draft,+b.dataset.d));
   const dep=p.querySelector('#deploy'); if(dep) dep.onclick=deploy;
+  const cs=p.querySelector('#craftSiege'); if(cs) cs.onclick=craftSiege;
   const dcl=p.querySelector('#draftClear'); if(dcl) dcl.onclick=()=>{state.castle.draft={};render();};
   const dpt=p.querySelector('#deployTo'); if(dpt) dpt.onclick=()=>deployTo(dpt.dataset.target);
   const dc2=p.querySelector('#draftClear2'); if(dc2) dc2.onclick=()=>{state.castle.draft={};render();};
@@ -360,6 +364,7 @@ function produce(u,qty,tier){const m=Game.produce(state,u,qty,tier); const lbl=(
 function construct(key){const m=Game.construct(state,key); toast(m||`🏗 ${key} 건설 시작`); render();}
 function upgradeBuilding(key){const m=Game.upgradeBuilding(state,key); toast(m||`🏗 ${key} 레벨업 시작`); render();}
 function fortifyWall(){const m=Game.fortifyWall(state); toast(m||`🏗 성벽 보강 시작`); render();}
+function craftSiege(){const m=Game.craftSiege(state); toast(m||`🏹 파성추 제작 완료 (보유 ${state.castle.siegeItems})`); render();}
 function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||"승급 특성을 선택하세요"); render();}
 function choosePromoteTrait(hid,traitId){const m=Game.choosePromoteTrait(state,hid,traitId); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
 function draftAdjust(u,d){Game.draftAdjust(state,u,d); render();}
