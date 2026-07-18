@@ -1623,7 +1623,12 @@ function renderPanel(){
   } else {
     h+=`<h3>📋 안내</h3><div class="k">🏰 <b>성을 눌러</b> 병력을 생산·출전시키세요.<br>부대(⚔)를 누른 뒤 갈 노드를 클릭 → 확정.<br>☠ 둥지를 공격해 사냥·토벌하면 보상·경험치·토벌 점수를 얻습니다.</div>`;
   }
-  // 드래곤(C1) — 영웅과 별개, 유일 개체. 용린 누적으로 단계 성장, 부대 하나에 배치해 전투 참여.
+  // #1(패널 길이): 영웅·드래곤 관리를 접이식으로 — 기본 접힘, 요약 한 줄만. 부대 선택 시 '선택 부대에' 배치하려면 펼침.
+  const mgmtOpen = state.mgmtOpen===true || !!state.pendingPromote;   // 승급 선택 대기 시 자동 펼침(놓침 방지)
+  { const d0=state.dragon||{stage:0}, dcur=Game.DRAGON_STAGES[d0.stage||0], armed=(s?.kind==="army"&&A(s.id)?.side==="P");
+    h+=`<hr><div id="mgmtToggle" style="cursor:pointer;font-size:12px;color:var(--gold);display:flex;justify-content:space-between;align-items:center;padding:3px 0">
+      <span>🦸 영웅 ${state.heroes.length} · 🐉 ${dcur.name}${state.pendingPromote?' <span style="color:#fca5a5">· 승급 선택!</span>':''}${armed&&!mgmtOpen?' <span class="k">(펼쳐서 부대 배치)</span>':''}</span><span>${mgmtOpen?"▲":"▼"}</span></div>`; }
+  if(mgmtOpen){
   h+=(function(){ const d=state.dragon||{stage:0}, st=Game.DRAGON_STAGES, cur=st[d.stage], next=st[d.stage+1];
     const loc=Game.dragonLoc(state), locTxt=loc==="idle"?"대기":(A(loc)?.name||"?")+" 배치";
     const pct=next?Math.min(100,Math.round(100*(state.dragonScale||0)/next.need)):100;
@@ -1684,9 +1689,11 @@ function renderPanel(){
     }
     h+=`</div>`;
   }
+  } // ← 영웅·드래곤 관리 접이식 끝
   p.innerHTML=h;
   // 핸들러
   const infoT=p.querySelector('#infoToggle'); if(infoT) infoT.onclick=()=>{state.infoOpen=!(state.infoOpen!==false);render();};
+  const mgmtT=p.querySelector('#mgmtToggle'); if(mgmtT) mgmtT.onclick=()=>{state.mgmtOpen=!(state.mgmtOpen===true);render();};
   const rl=p.querySelector('#rallyBtn'); if(rl) rl.onclick=()=>{const n=Game.rallyToDefense(state); toast(n?`⚔ ${n}개 부대 소집 — 성으로 귀환 중`:"소집할 부대 없음"); render();};
   p.querySelectorAll('[data-bld]').forEach(b=>b.onclick=()=>{state.castle.openBuilding=b.dataset.bld;render();});
   p.querySelectorAll('[data-construct]').forEach(b=>b.onclick=()=>construct(b.dataset.construct));
