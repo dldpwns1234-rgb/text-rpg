@@ -271,7 +271,12 @@ function renderPanel(){
     } else h+=`<div class="k">영웅 없음</div>`;
     if(a.side==="P"){
       h+=`<div style="font-size:12px;margin-top:6px;color:var(--gold)">▶ 이동/공격할 노드를 클릭 → 노드 옆 확정 버튼을 누르세요</div>`;
-      if(a.node==="P") h+=`<div style="margin-top:6px"><button class="minibtn" id="disbandBtn">성에 귀환</button></div>`;
+      // G-A: 자동 사냥 토글 — 켜면 이길 만한 근처 몬스터를 스스로 찾아 연쇄 사냥(느긋하게 걸어놓기)
+      h+=`<div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">
+        <button class="minibtn" id="huntToggle" style="${a.hunt?'background:var(--line);border-color:var(--green);color:var(--green)':''}">⚔ 자동 사냥 ${a.hunt?"ON":"OFF"}</button>`;
+      if(a.node==="P") h+=`<button class="minibtn" id="disbandBtn">성에 귀환</button>`;
+      h+=`</div>`;
+      if(a.hunt) h+=`<div class="k" style="font-size:11px;color:var(--green)">이길 만한 근처 몬스터를 자동 사냥 중 — 없으면 대기</div>`;
     }
   } else if(s?.kind==="node"){
     const n=NODES[s.id], occ=armiesAt(s.id);
@@ -395,6 +400,7 @@ function renderPanel(){
   const dpt=p.querySelector('#deployTo'); if(dpt) dpt.onclick=()=>deployTo(dpt.dataset.target);
   const dc2=p.querySelector('#draftClear2'); if(dc2) dc2.onclick=()=>{state.castle.draft={};render();};
   const dsb=p.querySelector('#disbandBtn'); if(dsb) dsb.onclick=()=>disband(state.selected.id);
+  const ht=p.querySelector('#huntToggle'); if(ht) ht.onclick=()=>{const a=A(state.selected.id); Game.setHunt(state,a.id,!a.hunt); toast(a.hunt?"⚔ 자동 사냥 켜짐":"자동 사냥 꺼짐"); render();};
   p.querySelectorAll('[data-econ]').forEach(b=>b.onclick=()=>buildEcon(b.dataset.econ));
   const uv=p.querySelector('[data-univ]'); if(uv) uv.onclick=buildUniversity;
   const tv=p.querySelector('[data-tavern]'); if(tv) tv.onclick=buildTavern;

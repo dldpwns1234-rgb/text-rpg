@@ -553,6 +553,26 @@
     }
     return {battle,event}; }
 
+  // ---- G-A: 부대 자동 사냥 — a.hunt 켠 부대가 유휴가 되면 '이길 만한' 최근접 몬스터로 스스로 진군(킬 후 다음 목표로 연쇄) ----
+  const UNIT_TM=t=>1+((t||1)-1)*0.15;   // engine.tierMult 동일(엔진 미노출 대비 로컬)
+  const unitScore=(name,tier)=>{const u=UNITS[name];return u?(u.hp+u.atk*4+u.df*2)*UNIT_TM(tier):0;};   // 전투 기여도 근사(공격 가중)
+  const compPower=comp=>{let s=0;for(const k in comp){const n=comp[k];if(n>0)s+=n*unitScore(baseOf(k),tierOf(k));}return s;};
+  function estCombatBuff(g,a){ let b=0; const h=a.hero&&heroById(g,a.hero); if(h&&h.type==="전투") b+=GRADE_BUFF[h.grade]+traitSum(h,"atkBonus");
+    b+=lordTalentSum(g,"atkBonus")+lordEquipSum(g,"atkBonus");
+    if(a.dragon) b+=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff+dragonSkillSum(g,"atkBonus")+dragonResearchSum(g,"atk");
+    return b; }
+  const armyPower=(g,a)=>compPower(a.comp)*(1+estCombatBuff(g,a));
+  function nearestWinnableMonster(g,a){ const {dist}=dijkstra(a.node,99); const ap=armyPower(g,a); let best=null,bd=Infinity;
+    for(const m of g.armies){ if(m.side!=="M"||m.mtier==="레이드") continue;   // 레이드 보스는 자동 대상 제외(수동 도전 유지)
+      const d=dist[m.node]; if(d===undefined) continue;
+      if(ap < compPower(m.comp)*1.2) continue;   // 승산 부족 → 스킵(안전 마진 1.2로 코인플립 회피)
+      if(d<bd){bd=d;best=m;} }
+    return best; }
+  function assignHuntOrders(g){ for(const a of g.armies){ if(a.side!=="P"||!a.hunt) continue;
+      if(a.dest && a.node!==a.dest) continue;   // 이미 이동 중이면 유지
+      const m=nearestWinnableMonster(g,a); if(m && m.node!==a.node) orderMove(g,a.id,m.node); } }
+  function setHunt(g,armyId,on){ const a=findArmy(g,armyId); if(a) a.hunt=!!on; return null; }
+
   // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
   const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
   function produce(g,u,qty,tier){qty=Math.max(1,qty|0);tier=Math.max(1,Math.min(TIER_MAX,tier||1));
@@ -857,6 +877,7 @@
     aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
     const seasonEvent=seasonTick(g); // 시즌형 침공(B2) — 예고/도래
     const factionEvents=factionTick(g);   // 다수 세력(B1) — 야생에서 습격대 등장
+    assignHuntOrders(g);            // G-A: 자동사냥 부대에 목표 지정(이동 전에 — 같은 틱에 출발)
     const mt=moveTick(g);            // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투(+세계이벤트)
     raidTick(g);
     g.turn++; tavernTick(g); processRespawns(g);
@@ -896,7 +917,7 @@
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
-    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,
+    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,
     produce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
