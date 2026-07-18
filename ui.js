@@ -560,27 +560,7 @@ function showBattleModal(sum){
     <div class="res-line k">생존 — 공격 ${sum.survA} · 수비 ${sum.survB}</div>
     <button class="minibtn" id="modalClose">확인</button>`);
 }
-// 🌍 세계 이벤트(A3) — 정복·함락·레이드는 게임오버가 아니라 진행 이벤트. 왕국은 계속된다.
-function showWorldEventModal(ev){
-  const rw=ev.reward?Object.entries(ev.reward).map(([r,v])=>`${r} +${v}`).join(", "):"";
-  if(ev.type==="conquest"){
-    showModal(`<h2>🏰 정복!</h2>
-      <div class="res-line">적 수도를 함락했습니다 — 영토와 보상을 획득!${rw?`<br><span class="k">${rw}</span>`:""}</div>
-      <div class="res-line k">적은 곧 세력을 재건합니다 — 왕국은 계속됩니다.</div>
-      <button class="minibtn" id="modalClose">확인</button>`);
-  } else if(ev.type==="defeat"){
-    showModal(`<h2>💥 수도 함락</h2>
-      <div class="res-line">적이 수도를 함락했습니다 — 자원 절반 손실, 성벽 손상.</div>
-      <div class="res-line k">주둔군을 재건하고 왕국을 다시 일으키세요.</div>
-      <button class="minibtn" id="modalClose">확인</button>`);
-  } else if(ev.type==="raid"){
-    const won=ev.winner==="P";
-    showModal(`<h2>${won?"🏛 레이드 성공!":"🏛 레이드 실패"}</h2>
-      <div class="res-line">${won?`고대성 수성을 완수해 보상을 획득!${rw?`<br><span class="k">${rw}</span>`:""}`:"적이 고대성 레이드를 완수했습니다."}</div>
-      <div class="res-line k">고대 생물이 다시 나타나 재도전할 수 있습니다.</div>
-      <button class="minibtn" id="modalClose">확인</button>`);
-  }
-}
+// 🌍 세계 이벤트(A3, 정복·함락·레이드)는 stepTurn에서 배너/토스트로 직접 처리 — 재생을 끊지 않으려 모달을 쓰지 않는다(유저 요청).
 
 /* ===== 저장/불러오기 ===== */
 const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier","infoOpen"];
@@ -670,7 +650,12 @@ function stepTurn(){
     if(pWon||b.w==="draw"){ toast(`⚔ ${b.result.split('·').slice(0,2).join('·').trim()}`); }   // 승리·무승부 → 흐름 안 끊고 토스트
     else { rtPause(); showBattleModal(b); }   // 패배(부대 전멸/수도 위기)만 멈추고 모달로 확인
   }
-  if(r.worldEvent){ rtPause(); showWorldEventModal(r.worldEvent); }   // 정복/함락/레이드(A3) — 진행 이벤트로 안내, 게임은 계속
+  if(r.worldEvent){ const ev=r.worldEvent;   // 정복/함락/레이드(A3) — 진행 이벤트. 유저 요청: 팝업이 재생을 끊는 게 불편 → 정지·모달 없이 배너/토스트로만 안내(게임은 계속).
+    const rw=ev.reward?Object.entries(ev.reward).map(([k,v])=>`${k} +${v}`).join(", "):"";
+    if(ev.type==="conquest") toast(`🏰 정복! 적 수도 함락${rw?` — ${rw}`:""}`);
+    else if(ev.type==="raid"){ if(ev.winner==="P") toast(`🏛 레이드 성공!${rw?` — ${rw}`:""}`); else showThreatBanner("🏛 레이드 실패 — 고대성을 놓쳤습니다. 재도전 가능", "warn"); }
+    else if(ev.type==="defeat") showThreatBanner("💥 수도 함락 — 자원 절반 손실·성벽 손상. 주둔군을 재건하세요", "danger");
+  }
   else if(r.seasonEvent) showThreatBanner(r.seasonEvent.type==="warning"
     ? `⚠ ${r.seasonEvent.arriveIn}턴 후 시즌 대침공(${r.seasonEvent.count}차) 예고!${r.seasonEvent.previewUnit?` 예상 주력: ${r.seasonEvent.previewUnit}`:""}`
     : `⚔ 시즌 대침공 ${r.seasonEvent.count}차 도착! 병력 ${r.seasonEvent.troops}`, r.seasonEvent.type==="warning"?"warn":"danger");
