@@ -639,6 +639,13 @@
     {id:"res",   name:"첫 연구",     desc:"🔬 연구를 하나 완료해 부대를 강화하자.",               reward:{철:15},         done:g=>Object.keys(g.research.done||{}).length>=1},
     {id:"hero",  name:"영웅 영입",   desc:"🍺 선술집을 짓고 새 영웅을 영입하자.",                 reward:{식량:25},       done:g=>g.heroes.length>=3},
     {id:"subdue",name:"토벌 원정",   desc:"☠ 강한 둥지(고블린·오크 진지)를 토벌하자.",            reward:{철:20,석재:20}, done:g=>(g.subdue||0)>=1},
+    // E5(중후반 온보딩): 초반 8단계 이후 드래곤·승급·공성·레이드·시즌은 게임 안에서 발견하기 어려워 방치되기 쉬움 —
+    // 같은 순차 체인 패턴을 그대로 이어붙여 "다음엔 뭘 해야 하나"를 계속 제시(새 UI 없이 renderQuests 재사용).
+    {id:"dragon",name:"용의 동행",   desc:"🐉 드래곤을 부대에 배치해 함께 출전하자.",            reward:{},              dragonScale:10, done:g=>g.armies.some(a=>a.side==="P"&&a.dragon)},
+    {id:"promote",name:"영웅 승급",  desc:"⭐ 영웅을 승급시켜 특성을 하나 더 선택하자.",          reward:{},              xp:5,           done:g=>g.heroes.some(h=>h.grade>=3)},
+    {id:"siege",name:"공성 준비",    desc:"🏹 파성추를 제작해 성 공략을 준비하자.",              reward:{},              done:g=>(g.castle.siegeItems||0)>=1},
+    {id:"raid",name:"고대성 도전",   desc:"🏛 고대성 레이드에 도전해 수성에 성공하자.",           reward:{철:30,석재:30}, done:g=>(g.raidWins||0)>=1},
+    {id:"season",name:"시즌 대침공", desc:"🌪 시즌 대침공 예고에 대비해 첫 침공을 막아내자.",      reward:{식량:30,목재:30},done:g=>!!(g.season&&g.season.count>1)},
   ];
   function questTick(g){
     if(!g.quests) g.quests={done:[],idx:0};
@@ -648,6 +655,8 @@
       if(!q.done(g)) break;
       g.quests.done.push(q.id);
       if(q.reward) for(const r in q.reward) g.res[r]=(g.res[r]||0)+q.reward[r];
+      if(q.dragonScale) g.dragonScale=(g.dragonScale||0)+q.dragonScale;   // E5: 자원 종류가 다른 보상(용린/경험치)도 같은 체인에서 지급
+      if(q.xp) g.xpItems=(g.xpItems||0)+q.xp;
       g.quests.idx++; completed.push(q);
     }
     return completed;

@@ -49,7 +49,8 @@ function renderQuests(){
   const Q=Game.QUESTS, q=state.quests||{idx:0};
   if(!Q||q.idx>=Q.length) return "";   // 전부 완료 → 숨김
   const cur=Q[q.idx];
-  const rw=cur.reward?Object.entries(cur.reward).map(([r,v])=>`${r[0]}+${v}`).join(" "):"";
+  const rw=[cur.reward?Object.entries(cur.reward).map(([r,v])=>`${r[0]}+${v}`).join(" "):"",
+    cur.dragonScale?`용린+${cur.dragonScale}`:"", cur.xp?`경험치+${cur.xp}`:""].filter(Boolean).join(" ");
   return `<div style="background:var(--bg);border:1px solid var(--gold);border-radius:10px;padding:8px 10px;margin-bottom:10px">
     <div style="font-size:11px;color:var(--gold)">🎯 목표 <b>${q.idx+1} / ${Q.length}</b></div>
     <div style="font-weight:700;margin:2px 0">${cur.name}</div>
