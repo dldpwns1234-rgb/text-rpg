@@ -453,7 +453,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:[],buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
+    castle:{level:1,queue:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
     raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -724,7 +724,12 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const b=UNIT_BLD[u]; if(!b||!g.castle.buildings.includes(b))return"건물 미건설";
     const lv=g.castle.blevel[b]||1; if(tier>lv)return`${b} Lv.${lv} — T${tier} 생산 불가(레벨업 필요)`;
     const c=costOf(u,tier),tot={};for(const r in c)tot[r]=c[r]*qty;
-    if(!canAfford(g,tot))return"자원 부족"; pay(g,tot); const key=uk(u,tier); for(let i=0;i<qty;i++)g.castle.queue.push(key); return null;}
+    if(!canAfford(g,tot))return"자원 부족"; pay(g,tot); const key=uk(u,tier);
+    const q=g.castle.queue[b]=g.castle.queue[b]||[]; for(let i=0;i<qty;i++)q.push(key); return null;}
+  // F1: 병영별 독립 훈련 — 건물마다 자기 큐를 buildRate(g)만큼 동시에 소비(병영 3개면 최대 3배 산출)
+  function tickProduction(g){ if(g.starving) return; const rate=buildRate(g);
+    for(const b in g.castle.queue){ let made=rate; const q=g.castle.queue[b];
+      while(made>0&&q.length){ const u=q.shift(); g.castle.garrison[u]=(g.castle.garrison[u]||0)+1; made--; } } }
   // ---- 시간 소요 건설(건설잡 1개 동시). 완료 시 효과 적용. 저장 호환(순수 데이터) ----
   const ECON_MAX=6;
   const econCost=(k,lv)=>{const b=ECON_BUILDINGS[k].cost,c={};for(const r in b)c[r]=Math.round(b[r]*(1+lv*0.6));return c;};
@@ -978,7 +983,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     if(g.over)return{enemyBattle:null};
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving = g.res.식량<0; if(g.starving) g.res.식량=0;   // 식량 고갈 → 이번 턴 생산 중단
-    let made=g.starving?0:buildRate(g); while(made>0&&g.castle.queue.length){const u=g.castle.queue.shift();g.castle.garrison[u]=(g.castle.garrison[u]||0)+1;made--;}
+    tickProduction(g);
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
     let built=null;
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){built=g.castle.build.label;completeBuild(g,g.castle.build);g.castle.build=null;}}   // 건설 진행
@@ -1004,7 +1009,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function offlineStep(g){
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving=g.res.식량<0; if(g.starving)g.res.식량=0;
-    let made=g.starving?0:buildRate(g); while(made>0&&g.castle.queue.length){const u=g.castle.queue.shift();g.castle.garrison[u]=(g.castle.garrison[u]||0)+1;made--;}
+    tickProduction(g);
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){completeBuild(g,g.castle.build);g.castle.build=null;}}
     let heal=(g.castle.econ["병원"]||0)*3;
@@ -1252,7 +1257,8 @@ function renderPanel(){
     const upkeep=Game.foodUpkeep(state), tt=Game.totalTroops(state);
     h+=`<div class="k">생산 ${br}/턴${br>1?' <span style="color:var(--gold)">(내정영웅)</span>':''} · 부대 ${Game.pArmyCount(state)}/${Game.armySlots(state)} · 병력 ${tt}${c.wall?` · 🧱${c.wall}`:""}</div>`;
     if(upkeep>0) h+=`<div class="k" style="font-size:11px${state.starving?';color:#fca5a5':''}">🍞 식량 유지비 ${upkeep}/턴${state.starving?" · ⚠ 고갈! 생산 중단 — 농장 증설/병력 감축":""}</div>`;
-    h+=`<div class="queue" style="font-size:11px">대기열(${c.queue.length}): ${c.queue.length?c.queue.map(unitLabel).join(", "):"—"}</div>`;
+    { const qAll=Object.values(c.queue).flat(); // F1: 건물별 대기열 합계(상세는 건물 탭에 병영별로 표시)
+      h+=`<div class="queue" style="font-size:11px">대기열(${qAll.length}): ${qAll.length?qAll.map(unitLabel).join(", "):"—"}</div>`; }
     {const wnd=state.castle.wounded, wTot=Object.values(wnd).reduce((x,y)=>x+y,0);
      if(wTot>0) h+=`<div style="color:#fca5a5;font-size:12px">🩹 부상자 ${wTot} <span class="k">(병원 ${(state.castle.econ["병원"]||0)*3}/턴 치료)</span></div>`;}
     // 탭 바
@@ -1282,6 +1288,9 @@ function renderPanel(){
           h+=`<span class="cost">${cs}·${Game.buildDur("bld")}T</span><button class="minibtn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
         } else h+=`<span class="k" style="font-size:11px">최대 T${cap}${cap<TIER_MAX?" (마일스톤 해금 필요)":""}</span>`;
         h+=`</div>`;
+        // F1: 병영마다 독립 큐 — 이 건물 대기열만 따로 표시(동시 훈련 체감)
+        const bq=c.queue[key]||[];
+        if(bq.length) h+=`<div class="k" style="font-size:10px;padding-left:4px">　⏳ ${bq.map(unitLabel).join(", ")}</div>`;
       } else {
         const cs=Object.entries(b.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
         h+=`<div class="prodrow"><span class="nm">${b.icon} ${key} <span class="k">미건설</span></span>
@@ -1683,6 +1692,9 @@ function applySave(data){
   state.dragon=state.dragon||{stage:0}; state.dragon.skills=state.dragon.skills||[]; state.dragonScale=state.dragonScale||0;   // 구버전 세이브 호환(C1)
   state.pendingDragonSkill=state.pendingDragonSkill||null;
   (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
+  // F1: castle.queue가 구버전 단일 배열이면 건물별 오브젝트로 재분배(유닛 유실 방지)
+  if(Array.isArray(state.castle.queue)){ const old=state.castle.queue; state.castle.queue={};
+    for(const u of old){ const b=Game.UNIT_BLD[Game.baseOf(u)]; if(b) (state.castle.queue[b]=state.castle.queue[b]||[]).push(u); } }
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}

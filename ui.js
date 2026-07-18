@@ -80,7 +80,8 @@ function renderPanel(){
     const upkeep=Game.foodUpkeep(state), tt=Game.totalTroops(state);
     h+=`<div class="k">생산 ${br}/턴${br>1?' <span style="color:var(--gold)">(내정영웅)</span>':''} · 부대 ${Game.pArmyCount(state)}/${Game.armySlots(state)} · 병력 ${tt}${c.wall?` · 🧱${c.wall}`:""}</div>`;
     if(upkeep>0) h+=`<div class="k" style="font-size:11px${state.starving?';color:#fca5a5':''}">🍞 식량 유지비 ${upkeep}/턴${state.starving?" · ⚠ 고갈! 생산 중단 — 농장 증설/병력 감축":""}</div>`;
-    h+=`<div class="queue" style="font-size:11px">대기열(${c.queue.length}): ${c.queue.length?c.queue.map(unitLabel).join(", "):"—"}</div>`;
+    { const qAll=Object.values(c.queue).flat(); // F1: 건물별 대기열 합계(상세는 건물 탭에 병영별로 표시)
+      h+=`<div class="queue" style="font-size:11px">대기열(${qAll.length}): ${qAll.length?qAll.map(unitLabel).join(", "):"—"}</div>`; }
     {const wnd=state.castle.wounded, wTot=Object.values(wnd).reduce((x,y)=>x+y,0);
      if(wTot>0) h+=`<div style="color:#fca5a5;font-size:12px">🩹 부상자 ${wTot} <span class="k">(병원 ${(state.castle.econ["병원"]||0)*3}/턴 치료)</span></div>`;}
     // 탭 바
@@ -110,6 +111,9 @@ function renderPanel(){
           h+=`<span class="cost">${cs}·${Game.buildDur("bld")}T</span><button class="minibtn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
         } else h+=`<span class="k" style="font-size:11px">최대 T${cap}${cap<TIER_MAX?" (마일스톤 해금 필요)":""}</span>`;
         h+=`</div>`;
+        // F1: 병영마다 독립 큐 — 이 건물 대기열만 따로 표시(동시 훈련 체감)
+        const bq=c.queue[key]||[];
+        if(bq.length) h+=`<div class="k" style="font-size:10px;padding-left:4px">　⏳ ${bq.map(unitLabel).join(", ")}</div>`;
       } else {
         const cs=Object.entries(b.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
         h+=`<div class="prodrow"><span class="nm">${b.icon} ${key} <span class="k">미건설</span></span>
@@ -511,6 +515,9 @@ function applySave(data){
   state.dragon=state.dragon||{stage:0}; state.dragon.skills=state.dragon.skills||[]; state.dragonScale=state.dragonScale||0;   // 구버전 세이브 호환(C1)
   state.pendingDragonSkill=state.pendingDragonSkill||null;
   (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
+  // F1: castle.queue가 구버전 단일 배열이면 건물별 오브젝트로 재분배(유닛 유실 방지)
+  if(Array.isArray(state.castle.queue)){ const old=state.castle.queue; state.castle.queue={};
+    for(const u of old){ const b=Game.UNIT_BLD[Game.baseOf(u)]; if(b) (state.castle.queue[b]=state.castle.queue[b]||[]).push(u); } }
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}

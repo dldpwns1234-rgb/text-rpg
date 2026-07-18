@@ -197,7 +197,7 @@
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:[],buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
+    castle:{level:1,queue:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
     raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -468,7 +468,12 @@
     const b=UNIT_BLD[u]; if(!b||!g.castle.buildings.includes(b))return"건물 미건설";
     const lv=g.castle.blevel[b]||1; if(tier>lv)return`${b} Lv.${lv} — T${tier} 생산 불가(레벨업 필요)`;
     const c=costOf(u,tier),tot={};for(const r in c)tot[r]=c[r]*qty;
-    if(!canAfford(g,tot))return"자원 부족"; pay(g,tot); const key=uk(u,tier); for(let i=0;i<qty;i++)g.castle.queue.push(key); return null;}
+    if(!canAfford(g,tot))return"자원 부족"; pay(g,tot); const key=uk(u,tier);
+    const q=g.castle.queue[b]=g.castle.queue[b]||[]; for(let i=0;i<qty;i++)q.push(key); return null;}
+  // F1: 병영별 독립 훈련 — 건물마다 자기 큐를 buildRate(g)만큼 동시에 소비(병영 3개면 최대 3배 산출)
+  function tickProduction(g){ if(g.starving) return; const rate=buildRate(g);
+    for(const b in g.castle.queue){ let made=rate; const q=g.castle.queue[b];
+      while(made>0&&q.length){ const u=q.shift(); g.castle.garrison[u]=(g.castle.garrison[u]||0)+1; made--; } } }
   // ---- 시간 소요 건설(건설잡 1개 동시). 완료 시 효과 적용. 저장 호환(순수 데이터) ----
   const ECON_MAX=6;
   const econCost=(k,lv)=>{const b=ECON_BUILDINGS[k].cost,c={};for(const r in b)c[r]=Math.round(b[r]*(1+lv*0.6));return c;};
@@ -722,7 +727,7 @@
     if(g.over)return{enemyBattle:null};
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving = g.res.식량<0; if(g.starving) g.res.식량=0;   // 식량 고갈 → 이번 턴 생산 중단
-    let made=g.starving?0:buildRate(g); while(made>0&&g.castle.queue.length){const u=g.castle.queue.shift();g.castle.garrison[u]=(g.castle.garrison[u]||0)+1;made--;}
+    tickProduction(g);
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
     let built=null;
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){built=g.castle.build.label;completeBuild(g,g.castle.build);g.castle.build=null;}}   // 건설 진행
@@ -748,7 +753,7 @@
   function offlineStep(g){
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving=g.res.식량<0; if(g.starving)g.res.식량=0;
-    let made=g.starving?0:buildRate(g); while(made>0&&g.castle.queue.length){const u=g.castle.queue.shift();g.castle.garrison[u]=(g.castle.garrison[u]||0)+1;made--;}
+    tickProduction(g);
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){completeBuild(g,g.castle.build);g.castle.build=null;}}
     let heal=(g.castle.econ["병원"]||0)*3;
