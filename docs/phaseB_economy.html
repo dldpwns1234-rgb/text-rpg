@@ -528,7 +528,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
     castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0},
-    raid:{need:4,holder:null,holdTurns:0,cleared:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
+    raid:{need:4,holder:null,holdTurns:0,cleared:false,settled:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
     milestones:{done:[],idx:0,unlocked:[]},   // 마일스톤 진행(A2)
     conquests:0, defeats:0, raidWins:0, raidLosses:0,   // 지속형 왕국 지표(A3) — 게임오버 대신 누적 기록
@@ -717,11 +717,11 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // 상대가 다시 방비를 갖추면(본대 재건) 재무장해 다음 함락도 이벤트로 잡는다.
   function checkVictory(g){
     const R=g.raid;
-    if(R&&R.holder&&R.holdTurns>=R.need){
+    if(R&&R.holder&&R.holdTurns>=R.need&&!R.settled){   // settled: 같은 점거 스트릭당 1회만 발동(유저: 적이 고대성에 눌러앉으면 팝업 주기적 반복)
       const winnerSide=R.holder; let reward=null;
       if(winnerSide==="P"){ reward={철:80,석재:60,식량:60}; for(const r in reward) g.res[r]=(g.res[r]||0)+reward[r]; g.raidWins=(g.raidWins||0)+1; }
       else g.raidLosses=(g.raidLosses||0)+1;
-      R.holdTurns=0; R.holder=null; R.cleared=false; if(NODES.ANCIENT) NODES.ANCIENT.owner=null;   // 리셋 → 다시 도전 가능
+      R.settled=true;   // 정착: 점거가 이어지는 한 재발동 금지. 점거 해제/보스 재등장 시 raidTick이 풀어줌(무한 보상 파밍도 차단).
       return {type:"raid",winner:winnerSide,reward};
     }
     const eDef=armiesAt(g,"E").some(a=>a.side==="E"), pOnE=armiesAt(g,"E").some(a=>a.side==="P");
@@ -761,11 +761,11 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     g.respawns=keep; }
   // 레이드 수성 카운트: 보스 처치 후 ANCIENT를 한 세력이 점거하면 매턴 +1, 비거나 교전 중이면 리셋
   function raidTick(g){ const R=g.raid; if(!R)return;
-    if(armiesAt(g,"ANCIENT").some(a=>a.side==="M")){R.holder=null;R.holdTurns=0;return;}
+    if(armiesAt(g,"ANCIENT").some(a=>a.side==="M")){R.holder=null;R.holdTurns=0;R.settled=false;return;}   // 보스 재등장 → 재도전 가능
     R.cleared=true;
     const sides=[...new Set(armiesAt(g,"ANCIENT").filter(a=>a.side==="P"||a.side==="E").map(a=>a.side))];
-    if(sides.length===1){const s=sides[0];NODES.ANCIENT.owner=s; if(R.holder===s)R.holdTurns++;else{R.holder=s;R.holdTurns=1;}}
-    else{R.holder=null;R.holdTurns=0;}
+    if(sides.length===1){const s=sides[0];NODES.ANCIENT.owner=s; if(R.holder===s){ if(!R.settled)R.holdTurns++; } else {R.holder=s;R.holdTurns=1;R.settled=false;}}   // settled면 카운트 정지(재발동 금지). 점거자 교체 시 재무장.
+    else{R.holder=null;R.holdTurns=0;R.settled=false;}   // 비거나 교전 중 → 재무장
   }
   // ---- 시간 기반 이동 (mp 대체) ----
   // 부대 속도: comp에 존재하는 병종 그룹들의 MOVE_TICKS 단순 평균 → 틱당 진행도(1/틱).
@@ -1886,6 +1886,7 @@ function applySave(data){
   state.quests=state.quests||{done:[],idx:0};   // 구버전 세이브 호환
   state.milestones=state.milestones||{done:[],idx:0,unlocked:[]};   // 구버전 세이브 호환(A2)
   state.raidBossGen=state.raidBossGen||0;
+  if(state.raid) state.raid.settled=state.raid.settled||false;   // 구버전 세이브 호환 — 고대성 점거 1회 발동 플래그
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
   state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
