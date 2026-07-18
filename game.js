@@ -16,7 +16,7 @@
 
   // ---- 상수 ----
   const RES=["식량","목재","석재","철"];
-  const GATHER_BASE=6, GATHER_HERO=1.5, ARMY_CAP=20, ECON_CAP=20, WOUND_RATE=0.35;
+  const GATHER_BASE=6, GATHER_HERO=1.5, ARMY_CAP=30, ECON_CAP=20, WOUND_RATE=0.35;   // ARMY_CAP: 부대당 최대 병력 기본값(성레벨·연구로 확장 — armyCapFor)
   const ARMY_SLOTS_BASE=3;  // 운용 부대 수 상한(§9): 기본 + 성 레벨 + 연구. 총군사력 = 부대수 × ARMY_CAP
   const UPKEEP_RATE=0.2, UPKEEP_FREE=20;  // 식량 유지비: FREE 초과 병력 1당 매턴 소모(대군 소프트 상한). 고갈 시 생산 중단
   const XP_REWARD={사냥:2,토벌:4,레이드:8};      // 몬스터 처치 → 경험치 아이템 (G-D: 승급이 느려 정체 → 상향)
@@ -203,7 +203,8 @@
   function dragonResearchSum(g,field){ let s=0;
     for(const k in RESEARCH){ const r=RESEARCH[k]; if(r.dragonMod && r.dragonMod.stat===field && g.research.done[k]) s+=r.dragonMod.amount; }
     return s; }
-  const armyCapFor=g=>ARMY_CAP+(hasR(g,"행군 편제 I")?10:0)+(hasR(g,"행군 편제 II")?10:0);
+  // 부대당 최대 병력: 기본 30 + 성 레벨당 +5(성이 크면 대군 운용 — "왕국이 자라면 부대도 커진다") + 행군 편제 연구 +10/+10.
+  const armyCapFor=g=>ARMY_CAP+((g.castle.level||1)-1)*5+(hasR(g,"행군 편제 I")?10:0)+(hasR(g,"행군 편제 II")?10:0);
 
   // ---- 맵 (로직: 위상만. 좌표는 렌더러 담당) — setMap 으로 교체 가능(노드↔타일) ----
   const RESPAWN_DELAY=8;
