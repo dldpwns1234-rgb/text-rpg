@@ -298,6 +298,49 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     {id:"roar2",  name:"위압의 포효 II",cat:"경제",  req:["roar1"], desc:"습격 세력 규모 -5%p (누적)",factionReduce:0.05},
   ];
   const dragonSkillSum=(g,field)=>((g.dragon&&g.dragon.skills)||[]).reduce((s,id)=>{const sk=DRAGON_SKILLS.find(x=>x.id===id);return s+((sk&&sk[field])||0);},0);
+
+  // ==== F4: 군주(Lord) + 군주 장비 ====================================================
+  // 몬스터 처치 → 군주 경험치/재료/설계도(전부 몬스터 티어 기준 — 종류별이 아니라 XP_REWARD 등과 완전히 같은 패턴).
+  const LORD_XP_REWARD={사냥:1,토벌:3,레이드:8};
+  const MATERIAL_REWARD={사냥:1,토벌:2,레이드:5};
+  const BLUEPRINT_REWARD={사냥:0,토벌:1,레이드:2};
+  const lordXPNeed=lv=>Math.round(15*Math.pow(1.35,lv-1));
+  // 재능 3트리(전투/경제/개발) — RESEARCH와 같은 req 체인이지만 자원 대신 talentPoints 소모, 턴 대기 없이 즉시 적용.
+  // 필드는 기존 4개 소비 지점(buildRate/econIncome/foodUpkeep/startResearch)+resolveBattle이 이미 아는 어휘만 사용 — 새 통합 지점 없음.
+  const LORD_TALENTS=[
+    {id:"lt_war1",name:"결의 I", tree:"전투",req:[],           cost:1,desc:"전군 공격 +5%p",field:"atkBonus",amount:0.05},
+    {id:"lt_war2",name:"결의 II",tree:"전투",req:["lt_war1"],  cost:1,desc:"전군 공격 +5%p (누적)",field:"atkBonus",amount:0.05},
+    {id:"lt_war3",name:"방벽 I", tree:"전투",req:[],           cost:1,desc:"전군 방어 +5%p",field:"defBonus",amount:0.05},
+    {id:"lt_war4",name:"방벽 II",tree:"전투",req:["lt_war3"],  cost:1,desc:"전군 방어 +5%p (누적)",field:"defBonus",amount:0.05},
+    {id:"lt_eco1",name:"번영 I", tree:"경제",req:[],           cost:1,desc:"자원 건물 산출 +10%",field:"econBonus",amount:0.10},
+    {id:"lt_eco2",name:"번영 II",tree:"경제",req:["lt_eco1"],  cost:1,desc:"자원 건물 산출 +10% (누적)",field:"econBonus",amount:0.10},
+    {id:"lt_eco3",name:"긴축 I", tree:"경제",req:[],           cost:1,desc:"식량 유지비 -8%",field:"upkeepReduce",amount:0.08},
+    {id:"lt_eco4",name:"긴축 II",tree:"경제",req:["lt_eco3"],  cost:1,desc:"식량 유지비 -8%p (누적)",field:"upkeepReduce",amount:0.08},
+    {id:"lt_dev1",name:"건축 I", tree:"개발",req:[],           cost:1,desc:"건설 속도 +1",field:"buildBonus",amount:1},
+    {id:"lt_dev2",name:"건축 II",tree:"개발",req:["lt_dev1"],  cost:1,desc:"건설 속도 +1 (누적)",field:"buildBonus",amount:1},
+    {id:"lt_dev3",name:"학문 I", tree:"개발",req:[],           cost:1,desc:"연구 소요 턴 -1",field:"researchBonus",amount:1},
+    {id:"lt_dev4",name:"학문 II",tree:"개발",req:["lt_dev3"],  cost:1,desc:"연구 소요 턴 -1 (누적)",field:"researchBonus",amount:1},
+  ];
+  const lordTalentSum=(g,field)=>Object.keys((g.lord&&g.lord.talents)||{}).reduce((s,id)=>{const t=LORD_TALENTS.find(x=>x.id===id);return s+((t&&t.field===field)?t.amount:0);},0);
+  // 군주 장비 — 슬롯 4개, 몬스터 처치로 얻은 재료·설계도로 제작 후 강화(1~5강, 아발론 방식: 1-2강 +5%p씩·3-4강 +10%p씩·5강 +20%p, 누적 +50%).
+  const EQUIP_SLOTS=["무기","방어구","투구","장신구"];
+  const ENHANCE_MULT=[0,0.05,0.10,0.20,0.30,0.50];
+  const EQUIPMENT={
+    "낡은 검":     {slot:"무기",  tier:1,need:{blueprint:1,material:4},cost:{철:20},         field:"atkBonus",amount:0.08,desc:"공격 +8%p"},
+    "용살자의 검":  {slot:"무기",  tier:2,need:{blueprint:2,material:8},cost:{철:45,석재:20},  field:"atkBonus",amount:0.15,desc:"공격 +15%p"},
+    "가죽 갑주":   {slot:"방어구", tier:1,need:{blueprint:1,material:4},cost:{목재:20},        field:"defBonus",amount:0.08,desc:"방어 +8%p"},
+    "판금 갑주":   {slot:"방어구", tier:2,need:{blueprint:2,material:8},cost:{목재:45,철:20},   field:"defBonus",amount:0.15,desc:"방어 +15%p"},
+    "감독관의 투구":{slot:"투구",  tier:1,need:{blueprint:1,material:4},cost:{목재:15,철:10},   field:"buildBonus",amount:1,  desc:"건설 속도 +1"},
+    "총사의 투구": {slot:"투구",  tier:2,need:{blueprint:2,material:8},cost:{목재:30,철:25},   field:"buildBonus",amount:2,  desc:"건설 속도 +2"},
+    "번영의 인장": {slot:"장신구", tier:1,need:{blueprint:1,material:4},cost:{식량:20,철:10},   field:"econBonus",amount:0.10,desc:"자원 건물 산출 +10%"},
+    "왕관의 인장": {slot:"장신구", tier:2,need:{blueprint:2,material:8},cost:{식량:40,철:25},   field:"econBonus",amount:0.20,desc:"자원 건물 산출 +20%"},
+  };
+  const lordEquipSum=(g,field)=>{ let s=0; const eq=(g.lord&&g.lord.equipment)||{};
+    for(const slot in eq){ const itemId=eq[slot]; if(!itemId) continue;
+      const it=(g.lordInventory||[]).find(x=>x.id===itemId); if(!it) continue;
+      const cat=EQUIPMENT[it.key]; if(!cat||cat.field!==field) continue;
+      s+=cat.amount*(1+ENHANCE_MULT[it.enhance||0]); }
+    return s; };
   const wallCost=lv=>({석재:25+lv*20,철:5+lv*4}); // 성벽 보강(반복형 석재 소비처) — 수성 방어↑
   const HERO_BUFF=0.20, HP_SCALE=1.0;  // HP 전역 배율. 1.4는 티어테스트 잔재로 삼각(기병>궁병)을 깨뜨려 1.0으로 정정(§7). 1.0=항등 → 실제 전투가 verify.js 검증 조건과 일치.
   // ---- 영웅 등급(★1~3): 등급이 버프 세기 결정 ----
@@ -488,6 +531,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
     pendingPromote:null,   // 영웅 승급 특성 선택 대기(C2)
     dragon:{stage:0,skills:[],skillPoints:0,scaleSpent:0}, dragonScale:0,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음). F3: 스킬은 req 트리+skillPoints로 획득(2択 폐기)
+    lord:{level:1,xp:0,talentPoints:0,talents:{},equipment:{}}, lordInventory:[], materials:0, blueprints:0,   // 군주(F4) — 몬스터 처치로 성장, 재능 트리+장비
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -525,13 +569,13 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const councilSlots=g=>2+unlockCount(g,"council",1);
   const councilGradeSum=g=>cityHeroes(g).reduce((s,h)=>s+(h.grade>=3?2:1),0);
   const councilSum=(g,field)=>cityHeroes(g).reduce((s,h)=>s+traitSum(h,field),0);
-  const buildRate=g=>1+(g.castle.level-1)+councilGradeSum(g)+(hasR(g,"대장간")?1:0)+(hasR(g,"대장간 II")?1:0)+councilSum(g,"buildBonus");
+  const buildRate=g=>1+(g.castle.level-1)+councilGradeSum(g)+(hasR(g,"대장간")?1:0)+(hasR(g,"대장간 II")?1:0)+councilSum(g,"buildBonus")+lordTalentSum(g,"buildBonus")+lordEquipSum(g,"buildBonus");
   const aiTierOf=g=>Math.min(AI_TIER_MAX,1+Math.floor(g.turn/(AI.tierEvery||14)));   // AI 티어 성장(플레이어 T4/T5 해금과 무관)
   const tierCap=g=>{const u=milestoneUnlocks(g); if(u.includes("tier5"))return 5; if(u.includes("tier4"))return 4; return 3;};   // 생산 건물이 오를 수 있는 실제 상한(마일스톤 해금 게이트)
   const aiCombatBuff=g=>0.06+0.03*(aiTierOf(g)-1);                                // AI 지휘관 정예화(영웅 대칭)
   const castleBaseIncome=g=>({식량:3+g.castle.level,목재:2+g.castle.level,석재:1+g.castle.level,철:g.castle.level+2});
   function econIncome(g){const inc={식량:0,목재:0,석재:0,철:0};
-    const mult=((hasR(g,"영농")?1.5:1)+(hasR(g,"영농 II")?0.25:0))*(1+councilSum(g,"econBonus"));   // 감독관 특성: 자원 건물 산출 추가(위원회 전원 합산)
+    const mult=((hasR(g,"영농")?1.5:1)+(hasR(g,"영농 II")?0.25:0))*(1+councilSum(g,"econBonus")+lordTalentSum(g,"econBonus")+lordEquipSum(g,"econBonus"));   // 감독관 특성+군주(위원회/재능/장비 전부 합산)
     for(const k in ECON_BUILDINGS){const b=ECON_BUILDINGS[k],n=g.castle.econ[k]||0;if(b.res&&n)inc[b.res]+=Math.round(b.amt*n*mult);}return inc;}
   function gatherOf(g,a){const n=NODES[a.node];if(a.side!=="P"||n.type!=="resource")return null;
     const hero=a.hero&&heroById(g,a.hero); const isCity=hero&&hero.type==="내정";
@@ -540,7 +584,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     return {res:n.res,amt:Math.round(base*mult)};}
   // 총 병력(주둔군 + 아군 부대) → 식량 유지비
   const totalTroops=g=>Object.values(g.castle.garrison).reduce((x,y)=>x+y,0)+g.armies.filter(a=>a.side==="P").reduce((x,a)=>x+troops(a),0);
-  const foodUpkeep=g=>{const rate=UPKEEP_RATE*(1-councilSum(g,"upkeepReduce"));   // 보급관 특성: 유지비 완화(위원회 합산)
+  const foodUpkeep=g=>{const rate=Math.max(0,UPKEEP_RATE*(1-councilSum(g,"upkeepReduce")-lordTalentSum(g,"upkeepReduce")-lordEquipSum(g,"upkeepReduce")));   // 보급관 특성+군주 재능/장비: 유지비 완화(전부 합산)
     return Math.ceil(Math.max(0,totalTroops(g)-UPKEEP_FREE)*rate);};
   function income(g){const inc={식량:0,목재:0,석재:0,철:0},base=castleBaseIncome(g),e=econIncome(g);
     for(const r of RES)inc[r]+=base[r]+e[r];
@@ -587,7 +631,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     }
     const aHero=hasCombatHero(g,attacker)?heroById(g,attacker.hero):null;
     const dHero=hasCombatHero(g,defender)?heroById(g,defender.hero):null;
-    let aB=aHero?GRADE_BUFF[aHero.grade]+traitSum(aHero,"atkBonus"):0, dB=dHero?GRADE_BUFF[dHero.grade]+traitSum(dHero,"defBonus"):0;
+    let aB=(aHero?GRADE_BUFF[aHero.grade]+traitSum(aHero,"atkBonus"):0)+lordTalentSum(g,"atkBonus")+lordEquipSum(g,"atkBonus"),
+        dB=(dHero?GRADE_BUFF[dHero.grade]+traitSum(dHero,"defBonus"):0)+lordTalentSum(g,"defBonus")+lordEquipSum(g,"defBonus");   // 군주(F4): 부대 지정 없이 항상 가산
     if(defender.side==="M") aB+=traitSum(aHero,"vsMonsterBonus");   // 사냥꾼 특성: 몬스터 상대 추가 버프
     if(attacker.side==="M") dB+=traitSum(dHero,"vsMonsterBonus");
     const dragonStageBuff=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff;   // 드래곤(C1) — 영웅과 별개로 가산, 알 단계는 0이라 자동 무효
@@ -627,6 +672,9 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
         if(defender.mtier&&SUBDUE_REWARD[defender.mtier]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[defender.mtier];sum.subdue=SUBDUE_REWARD[defender.mtier];rw+=` · 토벌점수 +${sum.subdue}`;}
         if(defender.mtier&&XP_REWARD[defender.mtier]){g.xpItems=(g.xpItems||0)+XP_REWARD[defender.mtier];sum.xp=XP_REWARD[defender.mtier];rw+=` · 경험치 +${sum.xp}`;}
         if(defender.mtier&&DRAGON_SCALE_REWARD[defender.mtier]){g.dragonScale=(g.dragonScale||0)+DRAGON_SCALE_REWARD[defender.mtier];sum.dragonScale=DRAGON_SCALE_REWARD[defender.mtier];rw+=` · 용린 +${sum.dragonScale}`;}
+        if(defender.mtier&&LORD_XP_REWARD[defender.mtier]){g.lord.xp=(g.lord.xp||0)+LORD_XP_REWARD[defender.mtier];sum.lordXp=LORD_XP_REWARD[defender.mtier];rw+=` · 군주 경험치 +${sum.lordXp}`;}
+        if(defender.mtier&&MATERIAL_REWARD[defender.mtier]){g.materials=(g.materials||0)+MATERIAL_REWARD[defender.mtier];sum.materials=MATERIAL_REWARD[defender.mtier];rw+=` · 재료 +${sum.materials}`;}
+        if(defender.mtier&&BLUEPRINT_REWARD[defender.mtier]){g.blueprints=(g.blueprints||0)+BLUEPRINT_REWARD[defender.mtier];sum.blueprints=BLUEPRINT_REWARD[defender.mtier];rw+=` · 설계도 +${sum.blueprints}`;}
         if(defender.mtier&&defender.mtier!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}
         else if(defender.mtier==="레이드"){   // 월드 보스(B4): 세대(gen)만큼 더 강해져 재등장
           g.raidBossGen=(g.raidBossGen||0)+1;
@@ -805,7 +853,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     if(!(r.req||[]).every(q=>g.research.done[q]))return"선행 연구 필요";
     if((r.excludes||[]).some(ex=>g.research.done[ex]))return"상호 배타 연구 — 이미 다른 노선을 선택함";
     if(!canAfford(g,r.cost))return"자원 부족";
-    pay(g,r.cost); const turns=Math.max(1,r.turns-councilSum(g,"researchBonus"));
+    pay(g,r.cost); const turns=Math.max(1,r.turns-councilSum(g,"researchBonus")-lordTalentSum(g,"researchBonus")-lordEquipSum(g,"researchBonus"));
     g.research.active={key:k,left:turns}; return null;}
   function assignHero(g,hid,loc){const h=heroById(g,hid); if(!h)return"영웅 없음";
     // F2: 위원회(성 배치)는 내정형 전용 + 슬롯 상한 — 이미 자리를 잡은 영웅의 재배치(같은 자리)는 허용.
@@ -1011,6 +1059,33 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     if((g.dragon.skillPoints||0)<1)return"스킬 포인트 부족";
     g.dragon.skillPoints--; g.dragon.skills.push(skillId); return null; }
 
+  // ---- 군주(F4): 몬스터 처치 경험치로 레벨업(순차 절차적 문턱, 마일스톤과 같은 패턴) → 레벨당 재능 포인트 2 ----
+  function lordTick(g){ if(!g.lord) g.lord={level:1,xp:0,talentPoints:0,talents:{},equipment:{}};
+    let leveled=false;
+    while(g.lord.xp>=lordXPNeed(g.lord.level)){ g.lord.xp-=lordXPNeed(g.lord.level); g.lord.level++; g.lord.talentPoints+=2; leveled=true; }
+    return leveled; }
+  function investTalent(g,key){ const t=LORD_TALENTS.find(x=>x.id===key); if(!t)return"잘못된 재능";
+    g.lord.talents=g.lord.talents||{}; if(g.lord.talents[key])return null;
+    if(!(t.req||[]).every(r=>g.lord.talents[r]))return"선행 재능 필요";
+    if((g.lord.talentPoints||0)<t.cost)return"재능 포인트 부족";
+    g.lord.talentPoints-=t.cost; g.lord.talents[key]=true; return null; }
+  function craftEquipment(g,key){ const it=EQUIPMENT[key]; if(!it)return"잘못된 장비";
+    if((g.blueprints||0)<it.need.blueprint)return"설계도 부족";
+    if((g.materials||0)<it.need.material)return"재료 부족";
+    if(!canAfford(g,it.cost))return"자원 부족";
+    g.blueprints-=it.need.blueprint; g.materials-=it.need.material; pay(g,it.cost);
+    g.lordInventory=g.lordInventory||[]; g.lordInventory.push({id:newId(g,"EQ"),key,enhance:0}); return null; }
+  const enhanceCost=lv=>({materials:5+lv*3, res:{철:10+lv*10}});   // lv=강화 전 현재 레벨(0~4)
+  function enhanceEquipment(g,itemId){ const it=(g.lordInventory||[]).find(x=>x.id===itemId); if(!it)return"장비 없음";
+    if(it.enhance>=5)return"최대 강화";
+    const c=enhanceCost(it.enhance);
+    if((g.materials||0)<c.materials)return"재료 부족"; if(!canAfford(g,c.res))return"자원 부족";
+    g.materials-=c.materials; pay(g,c.res); it.enhance++; return null; }
+  function equipItem(g,itemId){ const it=(g.lordInventory||[]).find(x=>x.id===itemId); if(!it)return"장비 없음";
+    const cat=EQUIPMENT[it.key]; if(!cat)return"잘못된 장비";
+    g.lord.equipment=g.lord.equipment||{}; g.lord.equipment[cat.slot]=itemId; return null; }
+  function unequipItem(g,slot){ if(g.lord&&g.lord.equipment) g.lord.equipment[slot]=null; return null; }
+
   // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
   function endTurn(g){
     if(g.over)return{enemyBattle:null};
@@ -1033,6 +1108,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const questsCompleted=questTick(g);
     const msCompleted=milestoneTick(g);
     const dragonCompleted=dragonTick(g);
+    lordTick(g);
     return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, dragonCompleted, worldEvent, seasonEvent, factionEvents};
   }
 
@@ -1047,7 +1123,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){completeBuild(g,g.castle.build);g.castle.build=null;}}
     let heal=(g.castle.econ["병원"]||0)*3;
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
-    g.turn++; tavernTick(g); processRespawns(g); questTick(g); milestoneTick(g); dragonTick(g);
+    g.turn++; tavernTick(g); processRespawns(g); questTick(g); milestoneTick(g); dragonTick(g); lordTick(g);
   }
   function offlineTick(g,ticks){ ticks=Math.max(0,Math.min(ticks|0,OFFLINE_MAX_TICKS));
     const t0=g.turn; for(let i=0;i<ticks;i++) offlineStep(g); return {ticks,turns:g.turn-t0}; }
@@ -1059,6 +1135,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
     DRAGON_STAGES,DRAGON_SKILLS,dragonTick,investDragonSkill,assignDragon,dragonLoc,
+    LORD_TALENTS,EQUIPMENT,EQUIP_SLOTS,ENHANCE_MULT,lordTick,investTalent,craftEquipment,enhanceEquipment,equipItem,unequipItem,lordXPNeed,enhanceCost,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
@@ -1296,7 +1373,7 @@ function renderPanel(){
      if(wTot>0) h+=`<div style="color:#fca5a5;font-size:12px">🩹 부상자 ${wTot} <span class="k">(병원 ${(state.castle.econ["병원"]||0)*3}/턴 치료)</span></div>`;}
     // 탭 바
     h+=`<div style="display:flex;gap:4px;margin:7px 0">`;
-    for(const t of ["건물","연구","선술집","출전"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
+    for(const t of ["건물","연구","선술집","출전","군주"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
     h+=`</div>`;
     if(tab==="건물"){
     if(busy){const pct=Math.round(100*(c.build.total-c.build.left)/c.build.total);
@@ -1421,6 +1498,55 @@ function renderPanel(){
         <button class="minibtn" id="deploy" style="border-color:var(--gold);color:var(--gold)" ${dt>0&&Game.canAddArmy(state)?"":"disabled"}>🚩 성에 출전</button>
         <button class="minibtn" id="draftClear" ${dt>0?"":"disabled"}>초기화</button></div>`; }
     } // ← 출전 탭 끝
+    if(tab==="군주"){
+    // F4: 군주(레벨/재능/장비) — 몬스터 처치로 얻은 경험치·재료·설계도로 성장.
+    const lord=state.lord||{level:1,xp:0,talentPoints:0,talents:{},equipment:{}};
+    const xpNeed=Game.lordXPNeed(lord.level), pct=Math.min(100,Math.round(100*lord.xp/xpNeed));
+    h+=`<div class="k">👑 군주 Lv.${lord.level} <span class="k">· 재능 포인트 ${lord.talentPoints||0}</span></div>
+      <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div>
+      <div class="k" style="font-size:10px;margin:2px 0 6px">경험치 ${lord.xp}/${xpNeed}</div>
+      <div class="k" style="font-size:11px;margin-bottom:6px">🧱 재료 ${state.materials||0} · 📜 설계도 ${state.blueprints||0}</div>`;
+    h+=`<hr><div class="k" style="margin-bottom:4px">🌳 재능 트리</div>`;
+    const trees=[...new Set(Game.LORD_TALENTS.map(t=>t.tree))];
+    for(const tree of trees){
+      h+=`<div style="font-size:11px;margin:6px 0 2px;color:#cbd5e1">▸ ${tree}</div>`;
+      for(const t of Game.LORD_TALENTS.filter(x=>x.tree===tree)){
+        const have=!!(lord.talents&&lord.talents[t.id]);
+        if(have){ h+=`<div class="prodrow"><span class="nm" style="font-size:11px">✅ ${t.name} <span class="k">${t.desc}</span></span></div>`; continue; }
+        const reqOk=(t.req||[]).every(r=>lord.talents&&lord.talents[r]);
+        if(!reqOk){ h+=`<div class="prodrow"><span class="nm" style="font-size:11px;opacity:.5">🔒 ${t.name} <span class="k">선행 필요</span></span></div>`; continue; }
+        h+=`<div class="prodrow"><span class="nm" style="font-size:11px">${t.name} <span class="k">${t.desc}</span></span>
+          <button class="minibtn" data-investtalent="${t.id}" ${(lord.talentPoints||0)>=t.cost?"":"disabled"}>습득 (${t.cost})</button></div>`;
+      }
+    }
+    h+=`<hr><div class="k" style="margin-bottom:4px">⚔ 장비</div>`;
+    const inv=state.lordInventory||[];
+    for(const slot of Game.EQUIP_SLOTS){
+      const itemId=lord.equipment&&lord.equipment[slot], item=itemId?inv.find(x=>x.id===itemId):null;
+      if(item){ const cat=Game.EQUIPMENT[item.key];
+        h+=`<div class="prodrow"><span class="nm">${slot}: ${item.key} <span class="k">+${item.enhance} · ${cat.desc}</span></span>
+          <button class="minibtn" data-enhanceequip="${item.id}" ${item.enhance<5?"":"disabled"}>강화</button>
+          <button class="minibtn" data-unequip="${slot}">해제</button></div>`;
+      } else h+=`<div class="prodrow"><span class="nm">${slot}: <span class="k">비어있음</span></span></div>`;
+    }
+    const equipped=new Set(Object.values(lord.equipment||{}).filter(Boolean));
+    const unworn=inv.filter(it=>!equipped.has(it.id));
+    if(unworn.length){
+      h+=`<div class="k" style="font-size:11px;margin:6px 0 2px">보유(미착용)</div>`;
+      for(const it of unworn){ const cat=Game.EQUIPMENT[it.key];
+        h+=`<div class="prodrow"><span class="nm">${it.key} <span class="k">+${it.enhance} · ${cat.desc}</span></span>
+          <button class="minibtn" data-enhanceequip="${it.id}" ${it.enhance<5?"":"disabled"}>강화</button>
+          <button class="minibtn" data-equipitem="${it.id}">장착</button></div>`;
+      }
+    }
+    h+=`<div class="k" style="font-size:11px;margin:6px 0 2px">🔨 제작</div>`;
+    for(const key in Game.EQUIPMENT){ const it=Game.EQUIPMENT[key];
+      const cs=Object.entries(it.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
+      const ok=(state.materials||0)>=it.need.material&&(state.blueprints||0)>=it.need.blueprint&&canAfford(it.cost);
+      h+=`<div class="prodrow"><span class="nm">${it.slot}: ${key} <span class="k">${it.desc} · 재료${it.need.material}·설계도${it.need.blueprint}</span></span>
+        <span class="cost">${cs}</span><button class="minibtn" data-craftequip="${key}" ${ok?"":"disabled"}>제작</button></div>`;
+    }
+    } // ← 군주 탭 끝
   } else if(s?.kind==="army"){
     const a=A(s.id);
     h+=`<h3>${a.side==="P"?"⚔ ":"✕ "}${a.name}</h3>`;
@@ -1539,6 +1665,12 @@ function renderPanel(){
   const da=p.querySelector('[data-dragonarmy]'); if(da) da.onclick=()=>{Game.assignDragon(state,state.selected.id);toast("🐉 드래곤 배치");render();};
   const di=p.querySelector('[data-dragonidle]'); if(di) di.onclick=()=>{Game.assignDragon(state,"idle");toast("🐉 드래곤 해제");render();};
   p.querySelectorAll('[data-investdragonskill]').forEach(b=>b.onclick=()=>{const m=Game.investDragonSkill(state,b.dataset.investdragonskill); toast(m||"🐉 드래곤 스킬 습득!"); render();});
+  // F4: 군주 재능/장비
+  p.querySelectorAll('[data-investtalent]').forEach(b=>b.onclick=()=>{const m=Game.investTalent(state,b.dataset.investtalent); toast(m||"👑 재능 습득!"); render();});
+  p.querySelectorAll('[data-craftequip]').forEach(b=>b.onclick=()=>{const m=Game.craftEquipment(state,b.dataset.craftequip); toast(m||"🔨 장비 제작!"); render();});
+  p.querySelectorAll('[data-enhanceequip]').forEach(b=>b.onclick=()=>{const m=Game.enhanceEquipment(state,b.dataset.enhanceequip); toast(m||"✨ 강화 성공!"); render();});
+  p.querySelectorAll('[data-equipitem]').forEach(b=>b.onclick=()=>{const m=Game.equipItem(state,b.dataset.equipitem); toast(m||"⚔ 장착!"); render();});
+  p.querySelectorAll('[data-unequip]').forEach(b=>b.onclick=()=>{Game.unequipItem(state,b.dataset.unequip); render();});
   const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
   p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
@@ -1738,6 +1870,10 @@ function applySave(data){
   // F3: 구 스킬 id(단일명)→신 id(Ⅰ접미사) 1회 이관 — 안 하면 구 세이브의 스킬이 조용히 무효화됨
   { const MIG={flame:"flame1",scale:"scale1",hunter:"hunter1",roar:"roar1"};
     state.dragon.skills=state.dragon.skills.map(id=>MIG[id]||id); }
+  // F4: 구버전 세이브 호환 — 군주 필드가 없으면 기본값 채움
+  state.lord=state.lord||{level:1,xp:0,talentPoints:0,talents:{},equipment:{}};
+  state.lord.talents=state.lord.talents||{}; state.lord.equipment=state.lord.equipment||{};
+  state.lordInventory=state.lordInventory||[]; state.materials=state.materials||0; state.blueprints=state.blueprints||0;
   (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
   // F1: castle.queue가 구버전 단일 배열이면 건물별 오브젝트로 재분배(유닛 유실 방지)
   if(Array.isArray(state.castle.queue)){ const old=state.castle.queue; state.castle.queue={};

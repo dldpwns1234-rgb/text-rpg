@@ -86,7 +86,7 @@ function renderPanel(){
      if(wTot>0) h+=`<div style="color:#fca5a5;font-size:12px">🩹 부상자 ${wTot} <span class="k">(병원 ${(state.castle.econ["병원"]||0)*3}/턴 치료)</span></div>`;}
     // 탭 바
     h+=`<div style="display:flex;gap:4px;margin:7px 0">`;
-    for(const t of ["건물","연구","선술집","출전"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
+    for(const t of ["건물","연구","선술집","출전","군주"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
     h+=`</div>`;
     if(tab==="건물"){
     if(busy){const pct=Math.round(100*(c.build.total-c.build.left)/c.build.total);
@@ -211,6 +211,55 @@ function renderPanel(){
         <button class="minibtn" id="deploy" style="border-color:var(--gold);color:var(--gold)" ${dt>0&&Game.canAddArmy(state)?"":"disabled"}>🚩 성에 출전</button>
         <button class="minibtn" id="draftClear" ${dt>0?"":"disabled"}>초기화</button></div>`; }
     } // ← 출전 탭 끝
+    if(tab==="군주"){
+    // F4: 군주(레벨/재능/장비) — 몬스터 처치로 얻은 경험치·재료·설계도로 성장.
+    const lord=state.lord||{level:1,xp:0,talentPoints:0,talents:{},equipment:{}};
+    const xpNeed=Game.lordXPNeed(lord.level), pct=Math.min(100,Math.round(100*lord.xp/xpNeed));
+    h+=`<div class="k">👑 군주 Lv.${lord.level} <span class="k">· 재능 포인트 ${lord.talentPoints||0}</span></div>
+      <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div>
+      <div class="k" style="font-size:10px;margin:2px 0 6px">경험치 ${lord.xp}/${xpNeed}</div>
+      <div class="k" style="font-size:11px;margin-bottom:6px">🧱 재료 ${state.materials||0} · 📜 설계도 ${state.blueprints||0}</div>`;
+    h+=`<hr><div class="k" style="margin-bottom:4px">🌳 재능 트리</div>`;
+    const trees=[...new Set(Game.LORD_TALENTS.map(t=>t.tree))];
+    for(const tree of trees){
+      h+=`<div style="font-size:11px;margin:6px 0 2px;color:#cbd5e1">▸ ${tree}</div>`;
+      for(const t of Game.LORD_TALENTS.filter(x=>x.tree===tree)){
+        const have=!!(lord.talents&&lord.talents[t.id]);
+        if(have){ h+=`<div class="prodrow"><span class="nm" style="font-size:11px">✅ ${t.name} <span class="k">${t.desc}</span></span></div>`; continue; }
+        const reqOk=(t.req||[]).every(r=>lord.talents&&lord.talents[r]);
+        if(!reqOk){ h+=`<div class="prodrow"><span class="nm" style="font-size:11px;opacity:.5">🔒 ${t.name} <span class="k">선행 필요</span></span></div>`; continue; }
+        h+=`<div class="prodrow"><span class="nm" style="font-size:11px">${t.name} <span class="k">${t.desc}</span></span>
+          <button class="minibtn" data-investtalent="${t.id}" ${(lord.talentPoints||0)>=t.cost?"":"disabled"}>습득 (${t.cost})</button></div>`;
+      }
+    }
+    h+=`<hr><div class="k" style="margin-bottom:4px">⚔ 장비</div>`;
+    const inv=state.lordInventory||[];
+    for(const slot of Game.EQUIP_SLOTS){
+      const itemId=lord.equipment&&lord.equipment[slot], item=itemId?inv.find(x=>x.id===itemId):null;
+      if(item){ const cat=Game.EQUIPMENT[item.key];
+        h+=`<div class="prodrow"><span class="nm">${slot}: ${item.key} <span class="k">+${item.enhance} · ${cat.desc}</span></span>
+          <button class="minibtn" data-enhanceequip="${item.id}" ${item.enhance<5?"":"disabled"}>강화</button>
+          <button class="minibtn" data-unequip="${slot}">해제</button></div>`;
+      } else h+=`<div class="prodrow"><span class="nm">${slot}: <span class="k">비어있음</span></span></div>`;
+    }
+    const equipped=new Set(Object.values(lord.equipment||{}).filter(Boolean));
+    const unworn=inv.filter(it=>!equipped.has(it.id));
+    if(unworn.length){
+      h+=`<div class="k" style="font-size:11px;margin:6px 0 2px">보유(미착용)</div>`;
+      for(const it of unworn){ const cat=Game.EQUIPMENT[it.key];
+        h+=`<div class="prodrow"><span class="nm">${it.key} <span class="k">+${it.enhance} · ${cat.desc}</span></span>
+          <button class="minibtn" data-enhanceequip="${it.id}" ${it.enhance<5?"":"disabled"}>강화</button>
+          <button class="minibtn" data-equipitem="${it.id}">장착</button></div>`;
+      }
+    }
+    h+=`<div class="k" style="font-size:11px;margin:6px 0 2px">🔨 제작</div>`;
+    for(const key in Game.EQUIPMENT){ const it=Game.EQUIPMENT[key];
+      const cs=Object.entries(it.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
+      const ok=(state.materials||0)>=it.need.material&&(state.blueprints||0)>=it.need.blueprint&&canAfford(it.cost);
+      h+=`<div class="prodrow"><span class="nm">${it.slot}: ${key} <span class="k">${it.desc} · 재료${it.need.material}·설계도${it.need.blueprint}</span></span>
+        <span class="cost">${cs}</span><button class="minibtn" data-craftequip="${key}" ${ok?"":"disabled"}>제작</button></div>`;
+    }
+    } // ← 군주 탭 끝
   } else if(s?.kind==="army"){
     const a=A(s.id);
     h+=`<h3>${a.side==="P"?"⚔ ":"✕ "}${a.name}</h3>`;
@@ -329,6 +378,12 @@ function renderPanel(){
   const da=p.querySelector('[data-dragonarmy]'); if(da) da.onclick=()=>{Game.assignDragon(state,state.selected.id);toast("🐉 드래곤 배치");render();};
   const di=p.querySelector('[data-dragonidle]'); if(di) di.onclick=()=>{Game.assignDragon(state,"idle");toast("🐉 드래곤 해제");render();};
   p.querySelectorAll('[data-investdragonskill]').forEach(b=>b.onclick=()=>{const m=Game.investDragonSkill(state,b.dataset.investdragonskill); toast(m||"🐉 드래곤 스킬 습득!"); render();});
+  // F4: 군주 재능/장비
+  p.querySelectorAll('[data-investtalent]').forEach(b=>b.onclick=()=>{const m=Game.investTalent(state,b.dataset.investtalent); toast(m||"👑 재능 습득!"); render();});
+  p.querySelectorAll('[data-craftequip]').forEach(b=>b.onclick=()=>{const m=Game.craftEquipment(state,b.dataset.craftequip); toast(m||"🔨 장비 제작!"); render();});
+  p.querySelectorAll('[data-enhanceequip]').forEach(b=>b.onclick=()=>{const m=Game.enhanceEquipment(state,b.dataset.enhanceequip); toast(m||"✨ 강화 성공!"); render();});
+  p.querySelectorAll('[data-equipitem]').forEach(b=>b.onclick=()=>{const m=Game.equipItem(state,b.dataset.equipitem); toast(m||"⚔ 장착!"); render();});
+  p.querySelectorAll('[data-unequip]').forEach(b=>b.onclick=()=>{Game.unequipItem(state,b.dataset.unequip); render();});
   const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
   p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
@@ -528,6 +583,10 @@ function applySave(data){
   // F3: 구 스킬 id(단일명)→신 id(Ⅰ접미사) 1회 이관 — 안 하면 구 세이브의 스킬이 조용히 무효화됨
   { const MIG={flame:"flame1",scale:"scale1",hunter:"hunter1",roar:"roar1"};
     state.dragon.skills=state.dragon.skills.map(id=>MIG[id]||id); }
+  // F4: 구버전 세이브 호환 — 군주 필드가 없으면 기본값 채움
+  state.lord=state.lord||{level:1,xp:0,talentPoints:0,talents:{},equipment:{}};
+  state.lord.talents=state.lord.talents||{}; state.lord.equipment=state.lord.equipment||{};
+  state.lordInventory=state.lordInventory||[]; state.materials=state.materials||0; state.blueprints=state.blueprints||0;
   (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
   // F1: castle.queue가 구버전 단일 배열이면 건물별 오브젝트로 재분배(유닛 유실 방지)
   if(Array.isArray(state.castle.queue)){ const old=state.castle.queue; state.castle.queue={};
