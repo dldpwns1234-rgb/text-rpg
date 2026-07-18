@@ -245,14 +245,25 @@ function renderPanel(){
     const locTxt = hero.loc==="idle"?"대기": hero.loc==="castle"?"성 배치": (A(hero.loc)?.name||"?")+" 배치";
     h+=`<div class="hero"><b><span style="color:var(--gold)">${"★".repeat(hero.grade)}</span> ${hero.name}</b> <span class="k">(${hero.type})</span>
       <div class="loc">${locTxt}</div>
-      <div class="k" style="font-size:11px;color:var(--gold)">✦ ${heroEffect(hero)}</div>
-      <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
-    if(hero.type==="내정") h+=`<button class="minibtn" data-hcastle="${hero.id}">성에 배치</button>`;
-    if(s?.kind==="army"&&A(s.id).side==="P") h+=`<button class="minibtn" data-harmy="${hero.id}">선택 부대에</button>`;
-    h+=`<button class="minibtn" data-hidle="${hero.id}">해제</button>`;
-    if(hero.grade<3){const pc=Game.PROMOTE_COST[hero.grade];
-      h+=`<button class="minibtn" data-promote="${hero.id}" style="border-color:var(--gold);color:var(--gold)" ${(state.xpItems||0)>=pc?"":"disabled"}>승급 ★${hero.grade+1} (경험치 ${pc})</button>`;}
-    h+=`</div></div>`;
+      <div class="k" style="font-size:11px;color:var(--gold)">✦ ${heroEffect(hero)}</div>`;
+    if(state.pendingPromote && state.pendingPromote.hid===hero.id){
+      const pool=Game.HERO_TRAITS[hero.type]||[];
+      h+=`<div style="background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:8px;margin-top:6px">
+        <div style="font-size:12px;color:var(--gold);margin-bottom:5px">★${hero.grade+1} 승급 — 특성을 선택하세요</div>
+        ${state.pendingPromote.options.map(tid=>{const t=pool.find(x=>x.id===tid);
+          return t?`<button class="minibtn" data-choosetrait="${tid}" data-choosehero="${hero.id}" style="display:block;width:100%;text-align:left;margin-bottom:4px">✦${t.name}: ${t.desc}</button>`:"";}).join("")}
+        <button class="minibtn" data-cancelpromote="1" style="font-size:10px">취소</button>
+      </div>`;
+    } else {
+      h+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
+      if(hero.type==="내정") h+=`<button class="minibtn" data-hcastle="${hero.id}">성에 배치</button>`;
+      if(s?.kind==="army"&&A(s.id).side==="P") h+=`<button class="minibtn" data-harmy="${hero.id}">선택 부대에</button>`;
+      h+=`<button class="minibtn" data-hidle="${hero.id}">해제</button>`;
+      if(hero.grade<3){const pc=Game.PROMOTE_COST[hero.grade];
+        h+=`<button class="minibtn" data-promote="${hero.id}" style="border-color:var(--gold);color:var(--gold)" ${(!state.pendingPromote&&(state.xpItems||0)>=pc)?"":"disabled"}>승급 ★${hero.grade+1} (경험치 ${pc})</button>`;}
+      h+=`</div>`;
+    }
+    h+=`</div>`;
   }
   p.innerHTML=h;
   // 핸들러
@@ -265,6 +276,8 @@ function renderPanel(){
   p.querySelectorAll('[data-ctab]').forEach(b=>b.onclick=()=>{state.castleTab=b.dataset.ctab;render();});
   const wl=p.querySelector('[data-wall]'); if(wl) wl.onclick=fortifyWall;
   p.querySelectorAll('[data-promote]').forEach(b=>b.onclick=()=>promoteHero(b.dataset.promote));
+  p.querySelectorAll('[data-choosetrait]').forEach(b=>b.onclick=()=>choosePromoteTrait(b.dataset.choosehero,b.dataset.choosetrait));
+  const cp=p.querySelector('[data-cancelpromote]'); if(cp) cp.onclick=()=>{Game.cancelPromote(state);render();};
   const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
   p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
@@ -331,7 +344,8 @@ function produce(u,qty,tier){const m=Game.produce(state,u,qty,tier); const lbl=(
 function construct(key){const m=Game.construct(state,key); toast(m||`🏗 ${key} 건설 시작`); render();}
 function upgradeBuilding(key){const m=Game.upgradeBuilding(state,key); toast(m||`🏗 ${key} 레벨업 시작`); render();}
 function fortifyWall(){const m=Game.fortifyWall(state); toast(m||`🏗 성벽 보강 시작`); render();}
-function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
+function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||"승급 특성을 선택하세요"); render();}
+function choosePromoteTrait(hid,traitId){const m=Game.choosePromoteTrait(state,hid,traitId); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
 function draftAdjust(u,d){Game.draftAdjust(state,u,d); render();}
 function composerHTML(){ // 재사용: 주둔군 → 출전 편성 UI (버튼은 호출부에서)
   const gar=state.castle.garrison, draft=state.castle.draft;
@@ -438,6 +452,8 @@ function applySave(data){
   state.raidBossGen=state.raidBossGen||0;
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
+  state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
+  (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}

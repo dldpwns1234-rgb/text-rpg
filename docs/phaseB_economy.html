@@ -287,7 +287,10 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
            {id:"scholar",name:"학자",  desc:"연구 시작 시 소요 턴 −1",researchBonus:1},
            {id:"trader", name:"상인",  desc:"채집량 +0.2배",gatherBonus:0.2} ],
   };
-  const heroTrait=h=>h&&h.trait?(HERO_TRAITS[h.type]||[]).find(t=>t.id===h.trait):null;
+  // heroTraits: h.traits(배열, 신규)와 h.trait(단일, 구버전 세이브 잔재) 둘 다 허용 — 실제 배열 전환은 applySave에서.
+  const heroTraits=h=>{ if(!h) return []; const ids=h.traits||(h.trait?[h.trait]:[]);
+    return ids.map(id=>(HERO_TRAITS[h.type]||[]).find(t=>t.id===id)).filter(Boolean); };
+  const traitSum=(h,field)=>heroTraits(h).reduce((s,t)=>s+(t[field]||0),0);
   const randomTrait=type=>{const pool=HERO_TRAITS[type]||[]; return pool.length?pool[Math.floor(Math.random()*pool.length)].id:null;};
   // ---- 선술집 · 토벌 점수 ----
   const HERO_NAMES=["기사 아론","현자 밀라","용병 카일","사제 리나","궁정관 세드","기공사 도라","방백 유리","척후장 벤","연금술사 나임","백부장 그렌"];
@@ -427,6 +430,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     raidBossGen:0,   // 월드 보스(레이드) 재등장 세대(B4) — 재등장할 때마다 +1, 그만큼 강화
     season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
     factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
+    pendingPromote:null,   // 영웅 승급 특성 선택 대기(C2)
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -459,7 +463,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const hasR=(g,k)=>!!g.research.done[k];
   const pBaseMp=g=>5+(hasR(g,"행군술")?1:0);   // 확장 맵 대응(회랑 P→E≈7)
   const cityHero=g=>g.heroes.find(h=>h.type==="내정"&&h.loc==="castle");
-  const buildRate=g=>{const h=cityHero(g);return 1+(g.castle.level-1)+(h?(h.grade>=3?2:1):0)+(hasR(g,"대장간")?1:0)+(h?(heroTrait(h)?.buildBonus||0):0);};
+  const buildRate=g=>{const h=cityHero(g);return 1+(g.castle.level-1)+(h?(h.grade>=3?2:1):0)+(hasR(g,"대장간")?1:0)+(h?traitSum(h,"buildBonus"):0);};
   const aiTierOf=g=>Math.min(AI_TIER_MAX,1+Math.floor(g.turn/(AI.tierEvery||14)));   // AI 티어 성장(플레이어 T4/T5 해금과 무관)
   const tierCap=g=>{const u=milestoneUnlocks(g); if(u.includes("tier5"))return 5; if(u.includes("tier4"))return 4; return 3;};   // 생산 건물이 오를 수 있는 실제 상한(마일스톤 해금 게이트)
   const aiCombatBuff=g=>0.06+0.03*(aiTierOf(g)-1);                                // AI 지휘관 정예화(영웅 대칭)
@@ -469,7 +473,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function gatherOf(g,a){const n=NODES[a.node];if(a.side!=="P"||n.type!=="resource")return null;
     const hero=a.hero&&heroById(g,a.hero); const isCity=hero&&hero.type==="내정";
     const base=GATHER_BASE+(hasR(g,"채굴법")?2:0)+(hasR(g,"정밀 채굴")?2:0);
-    const mult=isCity?GRADE_GATHER[hero.grade]+(heroTrait(hero)?.gatherBonus||0):1;
+    const mult=isCity?GRADE_GATHER[hero.grade]+traitSum(hero,"gatherBonus"):1;
     return {res:n.res,amt:Math.round(base*mult)};}
   // 총 병력(주둔군 + 아군 부대) → 식량 유지비
   const totalTroops=g=>Object.values(g.castle.garrison).reduce((x,y)=>x+y,0)+g.armies.filter(a=>a.side==="P").reduce((x,a)=>x+troops(a),0);
@@ -512,7 +516,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const ancientHold=node==="ANCIENT"&&NODES.ANCIENT.owner===defender.side; // 고대성 방어 보정
     const aHero=hasCombatHero(g,attacker)?heroById(g,attacker.hero):null;
     const dHero=hasCombatHero(g,defender)?heroById(g,defender.hero):null;
-    let aB=aHero?GRADE_BUFF[aHero.grade]+(heroTrait(aHero)?.atkBonus||0):0, dB=dHero?GRADE_BUFF[dHero.grade]+(heroTrait(dHero)?.defBonus||0):0;
+    let aB=aHero?GRADE_BUFF[aHero.grade]+traitSum(aHero,"atkBonus"):0, dB=dHero?GRADE_BUFF[dHero.grade]+traitSum(dHero,"defBonus"):0;
     if(fort){ dB+=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22; if(defender.side==="P"&&hasR(g,"축성술"))dB+=0.15; }
     if(node==="P"&&defender.side==="P") dB+=Math.min(wallMaxLv(g)*0.05,(g.castle.wall||0)*0.05);  // 성벽 보강
     if(ancientHold) dB+=0.20;
@@ -617,7 +621,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     let s=0; for(const grp of gs) s+=MOVE_TICKS[grp]; return s/gs.size; }
   function armySpeed(g,a){ let t=armyTicksPerTile(a);
     if(a.side==="P" && hasR(g,"행군술")) t=Math.max(1,t-1);   // 행군술: 통과 1틱 단축(구 이동력+1 재활용)
-    const hero=a.hero&&heroById(g,a.hero); if(hero&&heroTrait(hero)?.moveBonus) t=Math.max(1,t-1);   // 기동형 특성(중첩 가능)
+    const hero=a.hero&&heroById(g,a.hero); if(hero) t=Math.max(1,t-traitSum(hero,"moveBonus"));   // 기동형 특성(여러 개면 누적 단축)
     return 1/t; }
   // 목적지 지정: 부대가 여러 틱에 걸쳐 스스로 이동. 동일 목적지면 진행도 보존.
   function orderMove(g,armyId,dest){ const a=findArmy(g,armyId); if(!a)return"부대 없음";
@@ -679,34 +683,51 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function upgradeBuilding(g,key){if(!g.castle.buildings.includes(key))return"미건설";
     const lv=g.castle.blevel[key]||1; if(lv>=tierCap(g))return"최대 레벨(마일스톤 해금 필요)"; return startBuild(g,"bld",key,bUpCost(key,lv),buildDur("bld"),`${key} → T${lv+1}`);}
   function fortifyWall(g){return startBuild(g,"wall",null,wallCost(g.castle.wall||0),buildDur("wall"),"성벽 보강");}
-  function promoteHero(g,hid){const h=heroById(g,hid); if(!h)return"영웅 없음"; if(h.grade>=3)return"이미 최고 등급"; const c=PROMOTE_COST[h.grade]; if((g.xpItems||0)<c)return"경험치 아이템 부족"; g.xpItems-=c; h.grade++; return null;}
+  // 승급(C2): 즉시 등급만 올리던 무결정을 "특성 2択" 결정으로 바꿈. promoteHero는 자원 확인 후 후보만 뽑고,
+  // 실제 등급 상승·자원 차감은 choosePromoteTrait(선택 확정 시점)에서 일어남.
+  function promoteHero(g,hid){const h=heroById(g,hid); if(!h)return"영웅 없음"; if(h.grade>=3)return"이미 최고 등급";
+    if(g.pendingPromote)return"다른 영웅의 승급 선택이 대기 중";
+    const c=PROMOTE_COST[h.grade]; if((g.xpItems||0)<c)return"경험치 아이템 부족";
+    const pool=HERO_TRAITS[h.type]||[], have=new Set(h.traits||(h.trait?[h.trait]:[]));
+    let cands=pool.filter(t=>!have.has(t.id)); if(cands.length<2) cands=pool;   // 후보 소진 시 중첩 강화 허용
+    const src=[...cands], picks=[];
+    while(picks.length<2 && src.length) picks.push(src.splice(Math.floor(Math.random()*src.length),1)[0]);
+    while(picks.length<2 && cands.length) picks.push(cands[Math.floor(Math.random()*cands.length)]);
+    g.pendingPromote={hid, options:picks.map(t=>t.id)}; return null;}
+  function choosePromoteTrait(g,hid,traitId){const pp=g.pendingPromote; if(!pp||pp.hid!==hid)return"대기 중인 승급 없음";
+    if(!pp.options.includes(traitId))return"잘못된 선택";
+    const h=heroById(g,hid); if(!h){g.pendingPromote=null;return"영웅 없음";}
+    const c=PROMOTE_COST[h.grade]; if((g.xpItems||0)<c){g.pendingPromote=null;return"경험치 아이템 부족";}
+    g.xpItems-=c; h.grade++; h.traits=h.traits||(h.trait?[h.trait]:[]); delete h.trait; h.traits.push(traitId);
+    g.pendingPromote=null; return null;}
+  function cancelPromote(g){g.pendingPromote=null; return null;}
   function levelUp(g){return startBuild(g,"castle",null,CASTLE_UP_COST,buildDur("castle"),"성 레벨업");}
   function buildEcon(g,k){const lv=g.castle.econ[k]||0; if(lv>=ECON_MAX)return"최대 레벨"; return startBuild(g,"econ",k,econCost(k,lv),buildDur("econ",lv),`${k} Lv${lv+1}`);}
   function buildUniversity(g){if(g.castle.buildings.includes("대학"))return null; return startBuild(g,"univ",null,UNIV_COST,buildDur("univ"),"대학 건설");}
   function startResearch(g,k){if(g.research.active)return"이미 연구 중"; const r=RESEARCH[k]; if(g.research.done[k])return null;
     if(!(r.req||[]).every(q=>g.research.done[q]))return"선행 연구 필요"; if(!canAfford(g,r.cost))return"자원 부족";
-    pay(g,r.cost); const ch=cityHero(g), turns=Math.max(1,r.turns-(ch&&heroTrait(ch)?.researchBonus||0));
+    pay(g,r.cost); const ch=cityHero(g), turns=Math.max(1,r.turns-(ch?traitSum(ch,"researchBonus"):0));
     g.research.active={key:k,left:turns}; return null;}
   function assignHero(g,hid,loc){heroById(g,hid).loc=loc; return null;}
   const heroEffect=h=>{const base=h.type==="전투"?`전투 참전 시 부대 전투력 +${Math.round(GRADE_BUFF[h.grade]*100)}%`
     :`성 배치: 생산 +${h.grade>=3?2:1} · 자원지 배치: 채집 ×${GRADE_GATHER[h.grade]}`;
-    const tr=heroTrait(h); return tr?`${base} · ✦${tr.name}: ${tr.desc}`:base;};
+    const trs=heroTraits(h); return trs.length?`${base} · ${trs.map(t=>`✦${t.name}: ${t.desc}`).join(" · ")}`:base;};
   // ---- 선술집: 랜덤 후보 등장 → 재화 영입 · ★3은 토벌 점수 특별 영입 ----
   function buildTavern(g){if(g.tavern.built)return null; return startBuild(g,"tavern",null,TAVERN_COST,buildDur("tavern"),"선술집 건설");}
   function rollCandidate(g){if(!g.tavern.built||g.tavern.pool.length>=POOL_CAP)return;
     const type=Math.random()<0.5?"내정":"전투", grade=Math.random()<0.6?1:2;
     const name=HERO_NAMES[Math.floor(Math.random()*HERO_NAMES.length)];
-    g.tavern.pool.push({id:newId(g,"H"),name,type,grade,trait:randomTrait(type)}); }
+    g.tavern.pool.push({id:newId(g,"H"),name,type,grade,traits:[randomTrait(type)]}); }
   function tavernTick(g){ if(g.tavern.built && g.turn%TAVERN_GAP===0) rollCandidate(g); }
   function recruitHero(g,cid){const i=g.tavern.pool.findIndex(c=>c.id===cid);if(i<0)return"후보 없음";
     const c=g.tavern.pool[i],cost=RECRUIT_COST[c.grade]; if(!canAfford(g,cost))return"자원 부족";
-    pay(g,cost); g.heroes.push({id:c.id,name:c.name,type:c.type,grade:c.grade,loc:"idle",trait:c.trait}); g.tavern.pool.splice(i,1); return null;}
+    pay(g,cost); g.heroes.push({id:c.id,name:c.name,type:c.type,grade:c.grade,loc:"idle",traits:c.traits}); g.tavern.pool.splice(i,1); return null;}
   function specialRecruit(g){if(!g.tavern.built)return"선술집 필요";
     if((g.subdue||0)<SPECIAL_COST.토벌)return"토벌 점수 부족";
     const res={식량:SPECIAL_COST.식량,철:SPECIAL_COST.철}; if(!canAfford(g,res))return"자원 부족";
     pay(g,res); g.subdue-=SPECIAL_COST.토벌;
     const type=Math.random()<0.5?"내정":"전투", name=HERO_NAMES[Math.floor(Math.random()*HERO_NAMES.length)];
-    g.heroes.push({id:newId(g,"H"),name:name,type,grade:3,loc:"idle",trait:randomTrait(type)}); return null;}
+    g.heroes.push({id:newId(g,"H"),name:name,type,grade:3,loc:"idle",traits:[randomTrait(type)]}); return null;}
   function draftAdjust(g,u,d){const gar=g.castle.garrison,draft=g.castle.draft;const avail=gar[u]||0,cur=draft[u]||0,tot=Object.values(draft).reduce((x,y)=>x+y,0);
     if(d>0&&(cur>=avail||tot>=ARMY_CAP))return; const nv=Math.max(0,Math.min(avail,cur+d)); if(nv===0)delete draft[u];else draft[u]=nv;}
   function makeArmyFromDraft(g){const draft=g.castle.draft,comp={};
@@ -896,8 +917,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
 
   API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
     TIER_MAX,TIER_NAME,tierCap,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
-    GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTrait,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
-    ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,
+    GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTraits,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
+    ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
@@ -1260,14 +1281,25 @@ function renderPanel(){
     const locTxt = hero.loc==="idle"?"대기": hero.loc==="castle"?"성 배치": (A(hero.loc)?.name||"?")+" 배치";
     h+=`<div class="hero"><b><span style="color:var(--gold)">${"★".repeat(hero.grade)}</span> ${hero.name}</b> <span class="k">(${hero.type})</span>
       <div class="loc">${locTxt}</div>
-      <div class="k" style="font-size:11px;color:var(--gold)">✦ ${heroEffect(hero)}</div>
-      <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
-    if(hero.type==="내정") h+=`<button class="minibtn" data-hcastle="${hero.id}">성에 배치</button>`;
-    if(s?.kind==="army"&&A(s.id).side==="P") h+=`<button class="minibtn" data-harmy="${hero.id}">선택 부대에</button>`;
-    h+=`<button class="minibtn" data-hidle="${hero.id}">해제</button>`;
-    if(hero.grade<3){const pc=Game.PROMOTE_COST[hero.grade];
-      h+=`<button class="minibtn" data-promote="${hero.id}" style="border-color:var(--gold);color:var(--gold)" ${(state.xpItems||0)>=pc?"":"disabled"}>승급 ★${hero.grade+1} (경험치 ${pc})</button>`;}
-    h+=`</div></div>`;
+      <div class="k" style="font-size:11px;color:var(--gold)">✦ ${heroEffect(hero)}</div>`;
+    if(state.pendingPromote && state.pendingPromote.hid===hero.id){
+      const pool=Game.HERO_TRAITS[hero.type]||[];
+      h+=`<div style="background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:8px;margin-top:6px">
+        <div style="font-size:12px;color:var(--gold);margin-bottom:5px">★${hero.grade+1} 승급 — 특성을 선택하세요</div>
+        ${state.pendingPromote.options.map(tid=>{const t=pool.find(x=>x.id===tid);
+          return t?`<button class="minibtn" data-choosetrait="${tid}" data-choosehero="${hero.id}" style="display:block;width:100%;text-align:left;margin-bottom:4px">✦${t.name}: ${t.desc}</button>`:"";}).join("")}
+        <button class="minibtn" data-cancelpromote="1" style="font-size:10px">취소</button>
+      </div>`;
+    } else {
+      h+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
+      if(hero.type==="내정") h+=`<button class="minibtn" data-hcastle="${hero.id}">성에 배치</button>`;
+      if(s?.kind==="army"&&A(s.id).side==="P") h+=`<button class="minibtn" data-harmy="${hero.id}">선택 부대에</button>`;
+      h+=`<button class="minibtn" data-hidle="${hero.id}">해제</button>`;
+      if(hero.grade<3){const pc=Game.PROMOTE_COST[hero.grade];
+        h+=`<button class="minibtn" data-promote="${hero.id}" style="border-color:var(--gold);color:var(--gold)" ${(!state.pendingPromote&&(state.xpItems||0)>=pc)?"":"disabled"}>승급 ★${hero.grade+1} (경험치 ${pc})</button>`;}
+      h+=`</div>`;
+    }
+    h+=`</div>`;
   }
   p.innerHTML=h;
   // 핸들러
@@ -1280,6 +1312,8 @@ function renderPanel(){
   p.querySelectorAll('[data-ctab]').forEach(b=>b.onclick=()=>{state.castleTab=b.dataset.ctab;render();});
   const wl=p.querySelector('[data-wall]'); if(wl) wl.onclick=fortifyWall;
   p.querySelectorAll('[data-promote]').forEach(b=>b.onclick=()=>promoteHero(b.dataset.promote));
+  p.querySelectorAll('[data-choosetrait]').forEach(b=>b.onclick=()=>choosePromoteTrait(b.dataset.choosehero,b.dataset.choosetrait));
+  const cp=p.querySelector('[data-cancelpromote]'); if(cp) cp.onclick=()=>{Game.cancelPromote(state);render();};
   const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
   p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
@@ -1346,7 +1380,8 @@ function produce(u,qty,tier){const m=Game.produce(state,u,qty,tier); const lbl=(
 function construct(key){const m=Game.construct(state,key); toast(m||`🏗 ${key} 건설 시작`); render();}
 function upgradeBuilding(key){const m=Game.upgradeBuilding(state,key); toast(m||`🏗 ${key} 레벨업 시작`); render();}
 function fortifyWall(){const m=Game.fortifyWall(state); toast(m||`🏗 성벽 보강 시작`); render();}
-function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
+function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||"승급 특성을 선택하세요"); render();}
+function choosePromoteTrait(hid,traitId){const m=Game.choosePromoteTrait(state,hid,traitId); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
 function draftAdjust(u,d){Game.draftAdjust(state,u,d); render();}
 function composerHTML(){ // 재사용: 주둔군 → 출전 편성 UI (버튼은 호출부에서)
   const gar=state.castle.garrison, draft=state.castle.draft;
@@ -1453,6 +1488,8 @@ function applySave(data){
   state.raidBossGen=state.raidBossGen||0;
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
+  state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
+  (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
   document.getElementById('endturn').disabled=!!state.over; render();
 }
 function saveLocal(silent){try{localStorage.setItem(SAVE_KEY,JSON.stringify(saveSnapshot()));if(!silent)toast("💾 저장됨 (이 브라우저)");return true;}catch(e){if(!silent)toast("⚠ 브라우저 저장 불가 — ⬇ 파일로 내보내세요");return false;}}
