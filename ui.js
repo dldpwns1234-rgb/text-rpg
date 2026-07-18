@@ -138,7 +138,7 @@ function renderPanel(){
     // 🏗 자원 건물 — 레벨업(출력↑, 시간 소요). 병원은 레벨×3 치료
     h+=`<hr><div class="k" style="margin-bottom:4px">🏗 자원 건물 <span class="k">(레벨업 = 출력↑)</span></div>`;
     for(const k in ECON_BUILDINGS){ const b=ECON_BUILDINGS[k], lv=state.castle.econ[k]||0;
-      const mult=(b.res&&hasR("영농"))?1.5:1;
+      const mult=b.res?(hasR("영농")?1.5:1)+(hasR("영농 II")?0.25:0):1;
       const cur = lv>0 ? (b.res?`+${Math.round(b.amt*lv*mult)} ${b.res}/턴`:`치료 +${lv*3}/턴`) : "미건설";
       if(lv>=Game.ECON_MAX){ h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} 최대 · ${cur}</span></span></div>`; continue; }
       const cost=Game.econCost(k,lv); const cs=Object.entries(cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
@@ -160,7 +160,7 @@ function renderPanel(){
       h+=`</div>`;
       const act=state.research.active;
       if(act) h+=`<div style="color:var(--gold);font-size:12px;margin-bottom:4px">🔬 진행 중: ${act.key} — ${act.left}턴</div>`;
-      const subs = state.research.tab==="전투" ? ["공성·수성","보병","궁병","기병"] : ["경제"];
+      const subs = state.research.tab==="전투" ? ["공성·수성","보병","궁병","기병","드래곤"] : ["경제","행군"];
       for(const sub of subs){
         h+=`<div style="font-size:11px;margin:7px 0 2px;color:#cbd5e1">▸ ${sub}</div>`;
         for(const rk in RESEARCH){ const r=RESEARCH[rk]; if(r.cat!==state.research.tab||r.sub!==sub) continue;
@@ -409,10 +409,10 @@ function composerHTML(){ // 재사용: 주둔군 → 출전 편성 UI (버튼은
       h+=`<div class="prodrow"><span class="nm">${unitLabel(u)} <span class="k">보유 ${avail}</span></span>
         <button class="minibtn" data-draft="${u}" data-d="-1" ${d<=0?"disabled":""}>−</button>
         <span style="min-width:18px;text-align:center">${d}</span>
-        <button class="minibtn" data-draft="${u}" data-d="1" ${d>=avail||draftTotal>=ARMY_CAP?"disabled":""}>＋</button></div>`;
+        <button class="minibtn" data-draft="${u}" data-d="1" ${d>=avail||draftTotal>=Game.armyCapFor(state)?"disabled":""}>＋</button></div>`;
     }
   }
-  return h+`<div class="k" style="font-size:12px;margin-top:4px">편성 ${draftTotal}/${ARMY_CAP}</div>`;
+  return h+`<div class="k" style="font-size:12px;margin-top:4px">편성 ${draftTotal}/${Game.armyCapFor(state)}</div>`;
 }
 function deploy(){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const army=Game.deploy(state); if(army){state.selected={kind:"army",id:army.id};state.mode="normal";toast(`${army.name} 성에 출전!`);} render();}
 function deployTo(target){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const r=Game.deployTo(state,target); if(!r.army){toast("편성된 병력이 없습니다");return;}

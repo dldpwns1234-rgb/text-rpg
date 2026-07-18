@@ -391,6 +391,25 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     RESEARCH[kAtk]={cat:"전투",sub:g,req:[atk2,df2],excludes:[kDef],cost:{목재:35,철:45},turns:4,desc:`${g} 공격 +20% (철벽과 양자택일)`,mod:{group:g,stat:"atk",mul:1.20}};
     RESEARCH[kDef]={cat:"전투",sub:g,req:[atk2,df2],excludes:[kAtk],cost:{목재:35,철:45},turns:4,desc:`${g} 방어 +20% (결전과 양자택일)`,mod:{group:g,stat:"df",mul:1.20}};
   } })();
+  // F5(연구 다양화): 내정 5종 중 채굴법만 2티어였던 걸 나머지도 맞춤 — 기존 키 이름을 안 바꾸고(리네임 시
+  // hasR(g,"영농") 등 호출부 누락 위험이 커 E5에서 겪은 것과 같은 조용한 버그가 남) "영농 II"를 새로 얹어
+  // 원 키(hasR(g,"영농"))는 그대로 두고 II만 있으면 보너스가 추가로 붙도록 소비 지점에서 개별 가산한다.
+  RESEARCH["영농 II"]={cat:"내정",sub:"경제",req:["영농"],cost:{식량:25,목재:25},turns:3,desc:"자원 건물 수입 추가 +25%p"};
+  RESEARCH["대장간 II"]={cat:"내정",sub:"경제",req:["대장간"],cost:{목재:25,철:30},turns:3,desc:"병력 생산 속도 +1 (누적)"};
+  RESEARCH["행군술 II"]={cat:"내정",sub:"경제",req:["행군술"],cost:{식량:25,철:25},turns:3,desc:"모든 부대 이동력 +1 (누적)"};
+  // 행군 편제 — 부대 1개당 최대 병력(ARMY_CAP) 확장. draftAdjust의 상한 체크에서 소비.
+  RESEARCH["행군 편제 I"]={cat:"내정",sub:"행군",req:[],cost:{식량:20,목재:20,철:15},turns:3,desc:"부대당 최대 병력 +10"};
+  RESEARCH["행군 편제 II"]={cat:"내정",sub:"행군",req:["행군 편제 I"],cost:{식량:30,목재:30,철:25},turns:4,desc:"부대당 최대 병력 +10 (누적)"};
+  // 드래곤 연구 — 드래곤 스킬(선택형)과 별개로 드래곤 자체 스탯을 영구 강화. group 소속이 아니라 dragonMod로 격리.
+  RESEARCH["용의 힘 I"]={cat:"전투",sub:"드래곤",req:[],cost:{철:30,석재:20},turns:3,desc:"드래곤 전투 참여 시 공격 +10%p",dragonMod:{stat:"atk",amount:0.10}};
+  RESEARCH["용의 힘 II"]={cat:"전투",sub:"드래곤",req:["용의 힘 I"],cost:{철:45,석재:30},turns:4,desc:"드래곤 공격 +10%p (누적)",dragonMod:{stat:"atk",amount:0.10}};
+  RESEARCH["용의 비늘 I"]={cat:"전투",sub:"드래곤",req:[],cost:{철:20,석재:30},turns:3,desc:"드래곤 전투 참여 시 방어 +10%p",dragonMod:{stat:"def",amount:0.10}};
+  RESEARCH["용의 비늘 II"]={cat:"전투",sub:"드래곤",req:["용의 비늘 I"],cost:{철:30,석재:45},turns:4,desc:"드래곤 방어 +10%p (누적)",dragonMod:{stat:"def",amount:0.10}};
+  // dragonMod 항목 전용 합산 헬퍼 — researchMods(group 기반)와 별개 소형 함수로 격리해 기존 로직을 안 건드림.
+  function dragonResearchSum(g,field){ let s=0;
+    for(const k in RESEARCH){ const r=RESEARCH[k]; if(r.dragonMod && r.dragonMod.stat===field && g.research.done[k]) s+=r.dragonMod.amount; }
+    return s; }
+  const armyCapFor=g=>ARMY_CAP+(hasR(g,"행군 편제 I")?10:0)+(hasR(g,"행군 편제 II")?10:0);
 
   // ---- 맵 (로직: 위상만. 좌표는 렌더러 담당) — setMap 으로 교체 가능(노드↔타일) ----
   const RESPAWN_DELAY=8;
@@ -494,15 +513,15 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const canAfford=(g,c)=>Object.entries(c).every(([r,v])=>g.res[r]>=v);
   const pay=(g,c)=>{for(const r in c)g.res[r]-=c[r];};
   const hasR=(g,k)=>!!g.research.done[k];
-  const pBaseMp=g=>5+(hasR(g,"행군술")?1:0);   // 확장 맵 대응(회랑 P→E≈7)
+  const pBaseMp=g=>5+(hasR(g,"행군술")?1:0)+(hasR(g,"행군술 II")?1:0);   // 확장 맵 대응(회랑 P→E≈7)
   const cityHero=g=>g.heroes.find(h=>h.type==="내정"&&h.loc==="castle");
-  const buildRate=g=>{const h=cityHero(g);return 1+(g.castle.level-1)+(h?(h.grade>=3?2:1):0)+(hasR(g,"대장간")?1:0)+(h?traitSum(h,"buildBonus"):0);};
+  const buildRate=g=>{const h=cityHero(g);return 1+(g.castle.level-1)+(h?(h.grade>=3?2:1):0)+(hasR(g,"대장간")?1:0)+(hasR(g,"대장간 II")?1:0)+(h?traitSum(h,"buildBonus"):0);};
   const aiTierOf=g=>Math.min(AI_TIER_MAX,1+Math.floor(g.turn/(AI.tierEvery||14)));   // AI 티어 성장(플레이어 T4/T5 해금과 무관)
   const tierCap=g=>{const u=milestoneUnlocks(g); if(u.includes("tier5"))return 5; if(u.includes("tier4"))return 4; return 3;};   // 생산 건물이 오를 수 있는 실제 상한(마일스톤 해금 게이트)
   const aiCombatBuff=g=>0.06+0.03*(aiTierOf(g)-1);                                // AI 지휘관 정예화(영웅 대칭)
   const castleBaseIncome=g=>({식량:3+g.castle.level,목재:2+g.castle.level,석재:1+g.castle.level,철:g.castle.level+2});
   function econIncome(g){const inc={식량:0,목재:0,석재:0,철:0}, ch=cityHero(g);
-    const mult=(hasR(g,"영농")?1.5:1)*(1+(ch?traitSum(ch,"econBonus"):0));   // 감독관 특성: 자원 건물 산출 추가
+    const mult=((hasR(g,"영농")?1.5:1)+(hasR(g,"영농 II")?0.25:0))*(1+(ch?traitSum(ch,"econBonus"):0));   // 감독관 특성: 자원 건물 산출 추가
     for(const k in ECON_BUILDINGS){const b=ECON_BUILDINGS[k],n=g.castle.econ[k]||0;if(b.res&&n)inc[b.res]+=Math.round(b.amt*n*mult);}return inc;}
   function gatherOf(g,a){const n=NODES[a.node];if(a.side!=="P"||n.type!=="resource")return null;
     const hero=a.hero&&heroById(g,a.hero); const isCity=hero&&hero.type==="내정";
@@ -562,8 +581,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     if(defender.side==="M") aB+=traitSum(aHero,"vsMonsterBonus");   // 사냥꾼 특성: 몬스터 상대 추가 버프
     if(attacker.side==="M") dB+=traitSum(dHero,"vsMonsterBonus");
     const dragonStageBuff=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff;   // 드래곤(C1) — 영웅과 별개로 가산, 알 단계는 0이라 자동 무효
-    if(attacker.dragon){ aB+=dragonStageBuff+dragonSkillSum(g,"atkBonus"); if(defender.side==="M") aB+=dragonSkillSum(g,"vsMonsterBonus"); }
-    if(defender.dragon) dB+=dragonStageBuff+dragonSkillSum(g,"defBonus");
+    if(attacker.dragon){ aB+=dragonStageBuff+dragonSkillSum(g,"atkBonus")+dragonResearchSum(g,"atk"); if(defender.side==="M") aB+=dragonSkillSum(g,"vsMonsterBonus"); }
+    if(defender.dragon) dB+=dragonStageBuff+dragonSkillSum(g,"defBonus")+dragonResearchSum(g,"def");
     let siegeUsed=false;
     if(fort){ let fortDef=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22;
       if(attacker.side==="P" && (g.castle.siegeItems||0)>0){ g.castle.siegeItems--; fortDef=Math.max(0,fortDef-0.10); siegeUsed=true; }   // 파성추(C3) 소모
@@ -681,6 +700,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     let s=0; for(const grp of gs) s+=MOVE_TICKS[grp]; return s/gs.size; }
   function armySpeed(g,a){ let t=armyTicksPerTile(a);
     if(a.side==="P" && hasR(g,"행군술")) t=Math.max(1,t-1);   // 행군술: 통과 1틱 단축(구 이동력+1 재활용)
+    if(a.side==="P" && hasR(g,"행군술 II")) t=Math.max(1,t-1);   // F5: 행군술 II 누적 단축
     const hero=a.hero&&heroById(g,a.hero); if(hero) t=Math.max(1,t-traitSum(hero,"moveBonus"));   // 기동형 특성(여러 개면 누적 단축)
     return 1/t; }
   // 목적지 지정: 부대가 여러 틱에 걸쳐 스스로 이동. 동일 목적지면 진행도 보존.
@@ -802,7 +822,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const type=Math.random()<0.5?"내정":"전투", name=HERO_NAMES[Math.floor(Math.random()*HERO_NAMES.length)];
     g.heroes.push({id:newId(g,"H"),name:name,type,grade:3,loc:"idle",traits:[randomTrait(type)]}); return null;}
   function draftAdjust(g,u,d){const gar=g.castle.garrison,draft=g.castle.draft;const avail=gar[u]||0,cur=draft[u]||0,tot=Object.values(draft).reduce((x,y)=>x+y,0);
-    if(d>0&&(cur>=avail||tot>=ARMY_CAP))return; const nv=Math.max(0,Math.min(avail,cur+d)); if(nv===0)delete draft[u];else draft[u]=nv;}
+    if(d>0&&(cur>=avail||tot>=armyCapFor(g)))return; const nv=Math.max(0,Math.min(avail,cur+d)); if(nv===0)delete draft[u];else draft[u]=nv;}
   function makeArmyFromDraft(g){const draft=g.castle.draft,comp={};
     for(const u in draft){comp[u]=draft[u];g.castle.garrison[u]-=draft[u];if(g.castle.garrison[u]<=0)delete g.castle.garrison[u];}
     const army={id:newId(g,"P"),side:"P",node:"P",mp:pBaseMp(g),maxMp:pBaseMp(g),name:(g.armies.filter(a=>a.side==="P").length+1)+"군",comp,hero:null,dest:null,moveProg:0};
@@ -1022,7 +1042,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
     TIER_MAX,TIER_NAME,tierCap,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTraits,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,
-    ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,
+    ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,armyCapFor,
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
     DRAGON_STAGES,DRAGON_SKILLS,dragonTick,chooseDragonSkill,assignDragon,dragonLoc,
@@ -1280,7 +1300,7 @@ function renderPanel(){
     // 🏗 자원 건물 — 레벨업(출력↑, 시간 소요). 병원은 레벨×3 치료
     h+=`<hr><div class="k" style="margin-bottom:4px">🏗 자원 건물 <span class="k">(레벨업 = 출력↑)</span></div>`;
     for(const k in ECON_BUILDINGS){ const b=ECON_BUILDINGS[k], lv=state.castle.econ[k]||0;
-      const mult=(b.res&&hasR("영농"))?1.5:1;
+      const mult=b.res?(hasR("영농")?1.5:1)+(hasR("영농 II")?0.25:0):1;
       const cur = lv>0 ? (b.res?`+${Math.round(b.amt*lv*mult)} ${b.res}/턴`:`치료 +${lv*3}/턴`) : "미건설";
       if(lv>=Game.ECON_MAX){ h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} 최대 · ${cur}</span></span></div>`; continue; }
       const cost=Game.econCost(k,lv); const cs=Object.entries(cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
@@ -1302,7 +1322,7 @@ function renderPanel(){
       h+=`</div>`;
       const act=state.research.active;
       if(act) h+=`<div style="color:var(--gold);font-size:12px;margin-bottom:4px">🔬 진행 중: ${act.key} — ${act.left}턴</div>`;
-      const subs = state.research.tab==="전투" ? ["공성·수성","보병","궁병","기병"] : ["경제"];
+      const subs = state.research.tab==="전투" ? ["공성·수성","보병","궁병","기병","드래곤"] : ["경제","행군"];
       for(const sub of subs){
         h+=`<div style="font-size:11px;margin:7px 0 2px;color:#cbd5e1">▸ ${sub}</div>`;
         for(const rk in RESEARCH){ const r=RESEARCH[rk]; if(r.cat!==state.research.tab||r.sub!==sub) continue;
@@ -1551,10 +1571,10 @@ function composerHTML(){ // 재사용: 주둔군 → 출전 편성 UI (버튼은
       h+=`<div class="prodrow"><span class="nm">${unitLabel(u)} <span class="k">보유 ${avail}</span></span>
         <button class="minibtn" data-draft="${u}" data-d="-1" ${d<=0?"disabled":""}>−</button>
         <span style="min-width:18px;text-align:center">${d}</span>
-        <button class="minibtn" data-draft="${u}" data-d="1" ${d>=avail||draftTotal>=ARMY_CAP?"disabled":""}>＋</button></div>`;
+        <button class="minibtn" data-draft="${u}" data-d="1" ${d>=avail||draftTotal>=Game.armyCapFor(state)?"disabled":""}>＋</button></div>`;
     }
   }
-  return h+`<div class="k" style="font-size:12px;margin-top:4px">편성 ${draftTotal}/${ARMY_CAP}</div>`;
+  return h+`<div class="k" style="font-size:12px;margin-top:4px">편성 ${draftTotal}/${Game.armyCapFor(state)}</div>`;
 }
 function deploy(){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const army=Game.deploy(state); if(army){state.selected={kind:"army",id:army.id};state.mode="normal";toast(`${army.name} 성에 출전!`);} render();}
 function deployTo(target){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const r=Game.deployTo(state,target); if(!r.army){toast("편성된 병력이 없습니다");return;}
