@@ -161,6 +161,9 @@ function renderPanel(){
         for(const rk in RESEARCH){ const r=RESEARCH[rk]; if(r.cat!==state.research.tab||r.sub!==sub) continue;
           const pre=(r.req&&r.req.length)?"└ ":"";
           if(state.research.done[rk]){ h+=`<div class="prodrow"><span class="nm">${pre}✅ ${rk} <span class="k">${r.desc}</span></span></div>`; continue; }
+          // E4(연구 갈림길): 상호 배타 노선 중 하나를 이미 선택했으면 나머지는 영구히 잠금 표시
+          const excludedBy=(r.excludes||[]).find(ex=>state.research.done[ex]);
+          if(excludedBy){ h+=`<div class="prodrow"><span class="nm" style="opacity:.4">${pre}🚫 ${rk} <span class="k">"${excludedBy}" 선택으로 불가</span></span></div>`; continue; }
           const reqOk=(r.req||[]).every(q=>state.research.done[q]);
           const cs=Object.entries(r.cost).map(([res,v])=>`${res[0]}${v}`).join(" ");
           if(!reqOk){ h+=`<div class="prodrow"><span class="nm" style="opacity:.5">${pre}🔒 ${rk} <span class="k">선행: ${r.req.join(", ")}</span></span></div>`; continue; }

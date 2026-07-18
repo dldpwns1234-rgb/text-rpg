@@ -383,6 +383,14 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
       const k1=`${g} ${STATNAME[st]} I`,k2=`${g} ${STATNAME[st]} II`;
       RESEARCH[k1]={cat:"전투",sub:g,req:[],cost:c1,turns:2,desc:`${g} ${STATNAME[st]} +15%`,mod:{group:g,stat:st,mul:1.15}};
       RESEARCH[k2]={cat:"전투",sub:g,req:[k1],cost:c2,turns:3,desc:`${g} ${STATNAME[st]} +15% (누적)`,mod:{group:g,stat:st,mul:1.15}}; } })();
+  // E4(연구 트리 갈림길): 병종별 공+수 II를 다 마치면 "결전(공+20%)" vs "철벽(방+20%)" 중 하나만 선택(상호 배타) —
+  // 기존 mod/mul 파이프라인(researchMods) 그대로 재사용, excludes 필드 하나만 추가해 startResearch에서 차단.
+  (function(){ for(const g in GROUPS){
+    const atk2=`${g} ${STATNAME.atk} II`, df2=`${g} ${STATNAME.df} II`;
+    const kAtk=`${g} 특화: 결전`, kDef=`${g} 특화: 철벽`;
+    RESEARCH[kAtk]={cat:"전투",sub:g,req:[atk2,df2],excludes:[kDef],cost:{목재:35,철:45},turns:4,desc:`${g} 공격 +20% (철벽과 양자택일)`,mod:{group:g,stat:"atk",mul:1.20}};
+    RESEARCH[kDef]={cat:"전투",sub:g,req:[atk2,df2],excludes:[kAtk],cost:{목재:35,철:45},turns:4,desc:`${g} 방어 +20% (결전과 양자택일)`,mod:{group:g,stat:"df",mul:1.20}};
+  } })();
 
   // ---- 맵 (로직: 위상만. 좌표는 렌더러 담당) — setMap 으로 교체 가능(노드↔타일) ----
   const RESPAWN_DELAY=8;
@@ -759,7 +767,9 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function buildEcon(g,k){const lv=g.castle.econ[k]||0; if(lv>=ECON_MAX)return"최대 레벨"; return startBuild(g,"econ",k,econCost(k,lv),buildDur("econ",lv),`${k} Lv${lv+1}`);}
   function buildUniversity(g){if(g.castle.buildings.includes("대학"))return null; return startBuild(g,"univ",null,UNIV_COST,buildDur("univ"),"대학 건설");}
   function startResearch(g,k){if(g.research.active)return"이미 연구 중"; const r=RESEARCH[k]; if(g.research.done[k])return null;
-    if(!(r.req||[]).every(q=>g.research.done[q]))return"선행 연구 필요"; if(!canAfford(g,r.cost))return"자원 부족";
+    if(!(r.req||[]).every(q=>g.research.done[q]))return"선행 연구 필요";
+    if((r.excludes||[]).some(ex=>g.research.done[ex]))return"상호 배타 연구 — 이미 다른 노선을 선택함";
+    if(!canAfford(g,r.cost))return"자원 부족";
     pay(g,r.cost); const ch=cityHero(g), turns=Math.max(1,r.turns-(ch?traitSum(ch,"researchBonus"):0));
     g.research.active={key:k,left:turns}; return null;}
   function assignHero(g,hid,loc){heroById(g,hid).loc=loc; return null;}
@@ -1279,6 +1289,9 @@ function renderPanel(){
         for(const rk in RESEARCH){ const r=RESEARCH[rk]; if(r.cat!==state.research.tab||r.sub!==sub) continue;
           const pre=(r.req&&r.req.length)?"└ ":"";
           if(state.research.done[rk]){ h+=`<div class="prodrow"><span class="nm">${pre}✅ ${rk} <span class="k">${r.desc}</span></span></div>`; continue; }
+          // E4(연구 갈림길): 상호 배타 노선 중 하나를 이미 선택했으면 나머지는 영구히 잠금 표시
+          const excludedBy=(r.excludes||[]).find(ex=>state.research.done[ex]);
+          if(excludedBy){ h+=`<div class="prodrow"><span class="nm" style="opacity:.4">${pre}🚫 ${rk} <span class="k">"${excludedBy}" 선택으로 불가</span></span></div>`; continue; }
           const reqOk=(r.req||[]).every(q=>state.research.done[q]);
           const cs=Object.entries(r.cost).map(([res,v])=>`${res[0]}${v}`).join(" ");
           if(!reqOk){ h+=`<div class="prodrow"><span class="nm" style="opacity:.5">${pre}🔒 ${rk} <span class="k">선행: ${r.req.join(", ")}</span></span></div>`; continue; }
