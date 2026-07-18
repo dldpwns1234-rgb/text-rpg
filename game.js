@@ -577,10 +577,25 @@
   function assignHuntOrders(g){ for(const a of g.armies){ if(a.side!=="P"||!a.hunt) continue;
       if(a.dest && a.node!==a.dest) continue;   // 이미 이동 중이면 유지
       const m=nearestWinnableMonster(g,a); if(m && m.node!==a.node) orderMove(g,a.id,m.node); } }
-  function setHunt(g,armyId,on){ const a=findArmy(g,armyId); if(a) a.hunt=!!on; return null; }
-  // G-F: 전군 소집 — 사냥/원정 나간 모든 P부대를 성으로 귀환시켜 방어전 합류(defendCastle이 P의 pArmies를 수비에 포함).
-  // 자동사냥은 끄고 부름(안 그러면 도착 즉시 다시 사냥 나감). 시즌 예고에 능동 대응하는 "전쟁 준비" 순간.
-  function rallyToDefense(g){ let n=0; for(const a of g.armies){ if(a.side==="P"&&a.node!=="P"){ a.hunt=false; orderMove(g,a.id,"P"); n++; } } return n; }
+  function setHunt(g,armyId,on){ const a=findArmy(g,armyId); if(a){ a.hunt=!!on; if(on)a.gather=false; } return null; }   // 사냥·채집 상호배타
+  // ---- H1(방치형): 자동 채집 — a.gather 켠 부대가 유휴가 되면 가장 부족한 자원의 미점유 자원지로 스스로 진군. 도착하면 기존 주둔 채집(gatherOf)이 수입 발생. ----
+  function bestGatherNode(g,a,taken){ const {dist}=dijkstra(a.node,99); let best=null,bs=Infinity;
+    for(const nk in NODES){ const n=NODES[nk]; if(n.type!=="resource"||taken.has(nk)) continue;
+      const d=dist[nk]; if(d===undefined) continue;
+      const score=(g.res[n.res]||0)*100+d;   // 보유량 낮을수록·가까울수록 우선(자원 균형 채집)
+      if(score<bs){bs=score;best=nk;} }
+    return best; }
+  function assignGatherOrders(g){
+    const taken=new Set();   // 이미 점유/배정된 자원지(중복 파견 방지)
+    for(const x of g.armies){ if(x.side==="P"){ const dn=(x.dest&&x.node!==x.dest)?x.dest:x.node; if(NODES[dn]&&NODES[dn].type==="resource")taken.add(dn); } }
+    for(const a of g.armies){ if(a.side!=="P"||!a.gather) continue;
+      if(a.dest && a.node!==a.dest) continue;   // 이동 중 유지
+      if(NODES[a.node]&&NODES[a.node].type==="resource") continue;   // 이미 채집 중이면 유지
+      const t=bestGatherNode(g,a,taken); if(t){ orderMove(g,a.id,t); taken.add(t); } } }
+  function setGather(g,armyId,on){ const a=findArmy(g,armyId); if(a){ a.gather=!!on; if(on)a.hunt=false; } return null; }   // 채집·사냥 상호배타
+  // G-F: 전군 소집 — 사냥/채집/원정 나간 모든 P부대를 성으로 귀환시켜 방어전 합류(defendCastle이 P의 pArmies를 수비에 포함).
+  // 자동사냥·채집은 끄고 부름(안 그러면 도착 즉시 다시 나감). 시즌 예고에 능동 대응하는 "전쟁 준비" 순간.
+  function rallyToDefense(g){ let n=0; for(const a of g.armies){ if(a.side==="P"&&a.node!=="P"){ a.hunt=false; a.gather=false; orderMove(g,a.id,"P"); n++; } } return n; }
 
   // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
   const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
@@ -905,6 +920,7 @@
     aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
     const seasonEvent=seasonTick(g); // 시즌형 침공(B2) — 예고/도래
     const factionEvents=factionTick(g);   // 다수 세력(B1) — 야생에서 습격대 등장
+    assignGatherOrders(g);          // H1: 자동채집 부대에 자원지 지정
     assignHuntOrders(g);            // G-A: 자동사냥 부대에 목표 지정(이동 전에 — 같은 틱에 출발)
     const mt=moveTick(g);            // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투(+세계이벤트)
     raidTick(g);
@@ -945,7 +961,7 @@
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
-    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,rallyToDefense,
+    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,assignGatherOrders,setGather,rallyToDefense,
     produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };

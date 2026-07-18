@@ -833,10 +833,25 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   function assignHuntOrders(g){ for(const a of g.armies){ if(a.side!=="P"||!a.hunt) continue;
       if(a.dest && a.node!==a.dest) continue;   // 이미 이동 중이면 유지
       const m=nearestWinnableMonster(g,a); if(m && m.node!==a.node) orderMove(g,a.id,m.node); } }
-  function setHunt(g,armyId,on){ const a=findArmy(g,armyId); if(a) a.hunt=!!on; return null; }
-  // G-F: 전군 소집 — 사냥/원정 나간 모든 P부대를 성으로 귀환시켜 방어전 합류(defendCastle이 P의 pArmies를 수비에 포함).
-  // 자동사냥은 끄고 부름(안 그러면 도착 즉시 다시 사냥 나감). 시즌 예고에 능동 대응하는 "전쟁 준비" 순간.
-  function rallyToDefense(g){ let n=0; for(const a of g.armies){ if(a.side==="P"&&a.node!=="P"){ a.hunt=false; orderMove(g,a.id,"P"); n++; } } return n; }
+  function setHunt(g,armyId,on){ const a=findArmy(g,armyId); if(a){ a.hunt=!!on; if(on)a.gather=false; } return null; }   // 사냥·채집 상호배타
+  // ---- H1(방치형): 자동 채집 — a.gather 켠 부대가 유휴가 되면 가장 부족한 자원의 미점유 자원지로 스스로 진군. 도착하면 기존 주둔 채집(gatherOf)이 수입 발생. ----
+  function bestGatherNode(g,a,taken){ const {dist}=dijkstra(a.node,99); let best=null,bs=Infinity;
+    for(const nk in NODES){ const n=NODES[nk]; if(n.type!=="resource"||taken.has(nk)) continue;
+      const d=dist[nk]; if(d===undefined) continue;
+      const score=(g.res[n.res]||0)*100+d;   // 보유량 낮을수록·가까울수록 우선(자원 균형 채집)
+      if(score<bs){bs=score;best=nk;} }
+    return best; }
+  function assignGatherOrders(g){
+    const taken=new Set();   // 이미 점유/배정된 자원지(중복 파견 방지)
+    for(const x of g.armies){ if(x.side==="P"){ const dn=(x.dest&&x.node!==x.dest)?x.dest:x.node; if(NODES[dn]&&NODES[dn].type==="resource")taken.add(dn); } }
+    for(const a of g.armies){ if(a.side!=="P"||!a.gather) continue;
+      if(a.dest && a.node!==a.dest) continue;   // 이동 중 유지
+      if(NODES[a.node]&&NODES[a.node].type==="resource") continue;   // 이미 채집 중이면 유지
+      const t=bestGatherNode(g,a,taken); if(t){ orderMove(g,a.id,t); taken.add(t); } } }
+  function setGather(g,armyId,on){ const a=findArmy(g,armyId); if(a){ a.gather=!!on; if(on)a.hunt=false; } return null; }   // 채집·사냥 상호배타
+  // G-F: 전군 소집 — 사냥/채집/원정 나간 모든 P부대를 성으로 귀환시켜 방어전 합류(defendCastle이 P의 pArmies를 수비에 포함).
+  // 자동사냥·채집은 끄고 부름(안 그러면 도착 즉시 다시 나감). 시즌 예고에 능동 대응하는 "전쟁 준비" 순간.
+  function rallyToDefense(g){ let n=0; for(const a of g.armies){ if(a.side==="P"&&a.node!=="P"){ a.hunt=false; a.gather=false; orderMove(g,a.id,"P"); n++; } } return n; }
 
   // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
   const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
@@ -1161,6 +1176,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
     const seasonEvent=seasonTick(g); // 시즌형 침공(B2) — 예고/도래
     const factionEvents=factionTick(g);   // 다수 세력(B1) — 야생에서 습격대 등장
+    assignGatherOrders(g);          // H1: 자동채집 부대에 자원지 지정
     assignHuntOrders(g);            // G-A: 자동사냥 부대에 목표 지정(이동 전에 — 같은 틱에 출발)
     const mt=moveTick(g);            // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투(+세계이벤트)
     raidTick(g);
@@ -1201,7 +1217,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
-    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,rallyToDefense,
+    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,assignGatherOrders,setGather,rallyToDefense,
     produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
@@ -1593,12 +1609,14 @@ function renderPanel(){
     } else h+=`<div class="k">영웅 없음</div>`;
     if(a.side==="P"){
       h+=`<div style="font-size:12px;margin-top:6px;color:var(--gold)">▶ 이동/공격할 노드를 클릭 → 노드 옆 확정 버튼을 누르세요</div>`;
-      // G-A: 자동 사냥 토글 — 켜면 이길 만한 근처 몬스터를 스스로 찾아 연쇄 사냥(느긋하게 걸어놓기)
+      // G-A/H1: 자동 사냥·자동 채집 토글(상호배타) — 켜면 스스로 근처 몬스터 사냥 / 부족한 자원지로 채집(느긋하게 걸어놓기)
       h+=`<div style="margin-top:6px;display:flex;gap:5px;flex-wrap:wrap">
-        <button class="minibtn" id="huntToggle" style="${a.hunt?'background:var(--line);border-color:var(--green);color:var(--green)':''}">⚔ 자동 사냥 ${a.hunt?"ON":"OFF"}</button>`;
+        <button class="minibtn" id="huntToggle" style="${a.hunt?'background:var(--line);border-color:var(--green);color:var(--green)':''}">⚔ 자동 사냥 ${a.hunt?"ON":"OFF"}</button>
+        <button class="minibtn" id="gatherToggle" style="${a.gather?'background:var(--line);border-color:var(--gold);color:var(--gold)':''}">⛏ 자동 채집 ${a.gather?"ON":"OFF"}</button>`;
       if(a.node==="P") h+=`<button class="minibtn" id="disbandBtn">성에 귀환</button>`;
       h+=`</div>`;
       if(a.hunt) h+=`<div class="k" style="font-size:11px;color:var(--green)">이길 만한 근처 몬스터를 자동 사냥 중 — 없으면 대기</div>`;
+      if(a.gather) h+=`<div class="k" style="font-size:11px;color:var(--gold)">가장 부족한 자원지로 자동 채집 중 — 도착하면 수입 발생</div>`;
     }
   } else if(s?.kind==="node"){
     const n=NODES[s.id], occ=armiesAt(s.id);
@@ -1732,6 +1750,7 @@ function renderPanel(){
   const dc2=p.querySelector('#draftClear2'); if(dc2) dc2.onclick=()=>{state.castle.draft={};render();};
   const dsb=p.querySelector('#disbandBtn'); if(dsb) dsb.onclick=()=>disband(state.selected.id);
   const ht=p.querySelector('#huntToggle'); if(ht) ht.onclick=()=>{const a=A(state.selected.id); Game.setHunt(state,a.id,!a.hunt); toast(a.hunt?"⚔ 자동 사냥 켜짐":"자동 사냥 꺼짐"); render();};
+  const gt=p.querySelector('#gatherToggle'); if(gt) gt.onclick=()=>{const a=A(state.selected.id); Game.setGather(state,a.id,!a.gather); toast(a.gather?"⛏ 자동 채집 켜짐":"자동 채집 꺼짐"); render();};
   p.querySelectorAll('[data-econ]').forEach(b=>b.onclick=()=>buildEcon(b.dataset.econ));
   const uv=p.querySelector('[data-univ]'); if(uv) uv.onclick=buildUniversity;
   const tv=p.querySelector('[data-tavern]'); if(tv) tv.onclick=buildTavern;
