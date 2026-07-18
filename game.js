@@ -379,6 +379,21 @@
     const xp=Math.max(1,Math.floor(n/8)); g.xpItems=(g.xpItems||0)+xp; g.lord.xp=(g.lord.xp||0)+xp;
     sum.threatReward={...rw, 경험치:xp, 군주경험치:xp};
     return ` · 격퇴 보상 ${Object.entries(rw).map(([r,v])=>`${r}+${v}`).join(" ")} · 경험치+${xp} · 군주경험치+${xp}`; }
+  // 몬스터 처치 보상 — resolveBattle(온라인)·offlineStep(오프라인 사냥) 공용. rw 문자열 반환, sum에 세부 기록.
+  function grantMonsterReward(g,defender,node,sum){ let rw="";
+    if(!(defender.side==="M"&&defender.reward)) return rw;
+    for(const r in defender.reward)g.res[r]=(g.res[r]||0)+defender.reward[r];
+    rw=" · 보상 "+Object.entries(defender.reward).map(([r,v])=>`${r} +${v}`).join(", ");sum.reward=defender.reward;
+    const mt=defender.mtier;
+    if(mt&&SUBDUE_REWARD[mt]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[mt];sum.subdue=SUBDUE_REWARD[mt];rw+=` · 토벌점수 +${sum.subdue}`;}
+    if(mt&&XP_REWARD[mt]){g.xpItems=(g.xpItems||0)+XP_REWARD[mt];sum.xp=XP_REWARD[mt];rw+=` · 경험치 +${sum.xp}`;}
+    if(mt&&DRAGON_SCALE_REWARD[mt]){g.dragonScale=(g.dragonScale||0)+DRAGON_SCALE_REWARD[mt];sum.dragonScale=DRAGON_SCALE_REWARD[mt];rw+=` · 용린 +${sum.dragonScale}`;}
+    if(mt&&LORD_XP_REWARD[mt]){g.lord.xp=(g.lord.xp||0)+LORD_XP_REWARD[mt];sum.lordXp=LORD_XP_REWARD[mt];rw+=` · 군주 경험치 +${sum.lordXp}`;}
+    if(mt&&MATERIAL_REWARD[mt]){g.materials=(g.materials||0)+MATERIAL_REWARD[mt];sum.materials=MATERIAL_REWARD[mt];rw+=` · 재료 +${sum.materials}`;}
+    if(mt&&BLUEPRINT_REWARD[mt]){g.blueprints=(g.blueprints||0)+BLUEPRINT_REWARD[mt];sum.blueprints=BLUEPRINT_REWARD[mt];rw+=` · 설계도 +${sum.blueprints}`;}
+    if(mt&&mt!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}
+    else if(mt==="레이드"){ g.raidBossGen=(g.raidBossGen||0)+1; (g.respawns=g.respawns||[]).push({ancient:true,at:g.turn+RESPAWN_DELAY*3}); }
+    return rw; }
   function resolveBattle(g,attacker,defender,node){
     const fort=NODES[node].type==="castle"&&NODES[node].owner===defender.side;
     const ancientHold=node==="ANCIENT"&&NODES.ANCIENT.owner===defender.side; // 고대성 방어 보정
@@ -428,18 +443,7 @@
       dragonA:!!attacker.dragon, dragonB:!!defender.dragon, dragonStage:DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].name,
       enrageLoss:enrageLoss>0?Math.round(enrageLoss*100):0};
     if(res.w==="A"){ attacker.comp=rA; const wd=wound(attacker,beforeA,rA,aHero);
-      let rw=""; if(defender.side==="M"&&defender.reward){for(const r in defender.reward)g.res[r]=(g.res[r]||0)+defender.reward[r];rw=" · 보상 "+Object.entries(defender.reward).map(([r,v])=>`${r} +${v}`).join(", ");sum.reward=defender.reward;
-        if(defender.mtier&&SUBDUE_REWARD[defender.mtier]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[defender.mtier];sum.subdue=SUBDUE_REWARD[defender.mtier];rw+=` · 토벌점수 +${sum.subdue}`;}
-        if(defender.mtier&&XP_REWARD[defender.mtier]){g.xpItems=(g.xpItems||0)+XP_REWARD[defender.mtier];sum.xp=XP_REWARD[defender.mtier];rw+=` · 경험치 +${sum.xp}`;}
-        if(defender.mtier&&DRAGON_SCALE_REWARD[defender.mtier]){g.dragonScale=(g.dragonScale||0)+DRAGON_SCALE_REWARD[defender.mtier];sum.dragonScale=DRAGON_SCALE_REWARD[defender.mtier];rw+=` · 용린 +${sum.dragonScale}`;}
-        if(defender.mtier&&LORD_XP_REWARD[defender.mtier]){g.lord.xp=(g.lord.xp||0)+LORD_XP_REWARD[defender.mtier];sum.lordXp=LORD_XP_REWARD[defender.mtier];rw+=` · 군주 경험치 +${sum.lordXp}`;}
-        if(defender.mtier&&MATERIAL_REWARD[defender.mtier]){g.materials=(g.materials||0)+MATERIAL_REWARD[defender.mtier];sum.materials=MATERIAL_REWARD[defender.mtier];rw+=` · 재료 +${sum.materials}`;}
-        if(defender.mtier&&BLUEPRINT_REWARD[defender.mtier]){g.blueprints=(g.blueprints||0)+BLUEPRINT_REWARD[defender.mtier];sum.blueprints=BLUEPRINT_REWARD[defender.mtier];rw+=` · 설계도 +${sum.blueprints}`;}
-        if(defender.mtier&&defender.mtier!=="레이드"){(g.respawns=g.respawns||[]).push(defender.roamer?{random:true,at:g.turn+RESPAWN_DELAY}:{node:node,at:g.turn+RESPAWN_DELAY});}
-        else if(defender.mtier==="레이드"){   // 월드 보스(B4): 세대(gen)만큼 더 강해져 재등장
-          g.raidBossGen=(g.raidBossGen||0)+1;
-          (g.respawns=g.respawns||[]).push({ancient:true,at:g.turn+RESPAWN_DELAY*3});
-        }}
+      let rw=grantMonsterReward(g,defender,node,sum);   // 몬스터 처치 보상(추출 헬퍼 — 오프라인 사냥과 공용)
       if(attacker.side==="P"&&defender.side==="E") rw+=threatKillReward(g,defender,sum);   // G-D: 야전에서 적 위협군 격파
       sum.result=`${attacker.name} ${defender.side==="M"?"소탕 성공":"승리"} · ${defender.name} ${defender.side==="M"?"소멸":"전멸"}${rw}`+(wd?` · 부상 ${wd}`:"");
       removeArmy(g,defender); attacker.node=node; }
@@ -568,12 +572,20 @@
     if(a.dragon) b+=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff+dragonSkillSum(g,"atkBonus")+dragonResearchSum(g,"atk");
     return b; }
   const armyPower=(g,a)=>compPower(a.comp)*(1+estCombatBuff(g,a));
-  function nearestWinnableMonster(g,a){ const {dist}=dijkstra(a.node,99); const ap=armyPower(g,a); let best=null,bd=Infinity;
+  // 승산 확정 판정: 전력 근사(compPower)는 공/방 감쇄(dmg=max(atk*0.15,atk-df))를 못 담아, 저공격·고방어 부대가
+  // "압승"으로 오판되고 고방어 몬스터에 오히려 전멸한다. → 실제 전투 엔진으로 3판 시뮬해 전부 이겨야 사냥(온·오프 공용, 침묵 전멸 방지).
+  function huntWinnable(g,a,m){ const aB=estCombatBuff(g,a), mods=mergeMods(researchMods(g),HP_MODS);
+    for(let i=0;i<3;i++){ if(simulate(compArr(a),aB,compArr(m),0,BATTLE_ROUNDS,mods,HP_MODS).w!=="A") return false; }
+    return true; }
+  function nearestWinnableMonster(g,a){ const {dist}=dijkstra(a.node,99); const ap=armyPower(g,a);
+    const cands=[];
     for(const m of g.armies){ if(m.side!=="M"||m.mtier==="레이드") continue;   // 레이드 보스는 자동 대상 제외(수동 도전 유지)
       const d=dist[m.node]; if(d===undefined) continue;
-      if(ap < compPower(m.comp)*1.2) continue;   // 승산 부족 → 스킵(안전 마진 1.2로 코인플립 회피)
-      if(d<bd){bd=d;best=m;} }
-    return best; }
+      if(ap < compPower(m.comp)*1.2) continue;   // 1차 싼 프리필터(명백히 약하면 스킵)
+      cands.push([d,m]); }
+    cands.sort((x,y)=>x[0]-y[0]);
+    for(const [d,m] of cands){ if(huntWinnable(g,a,m)) return m; }   // 근접순으로 시뮬 확정 — 첫 확실 승리 대상 반환
+    return null; }
   function assignHuntOrders(g){ for(const a of g.armies){ if(a.side!=="P"||!a.hunt) continue;
       if(a.dest && a.node!==a.dest) continue;   // 이미 이동 중이면 유지
       const m=nearestWinnableMonster(g,a); if(m && m.node!==a.node) orderMove(g,a.id,m.node); } }
@@ -934,21 +946,51 @@
     return {enemyBattle:mt.battle, built, questsCompleted, msCompleted, dragonCompleted, worldEvent, seasonEvent, factionEvents};
   }
 
-  // ---- 오프라인 누적(A4): 실시각 계산은 ui.js 몫(Date.now()) — 여긴 순수하게 "틱 수"만 받아 진행.
-  // 전투·AI 원정은 스킵(자리 비운 사이 불공정한 기습 패배 방지), 경제·생산·연구·건설·퀘스트/마일스톤만 진행.
-  const OFFLINE_MAX_TICKS=20000;   // 안전 상한(ui의 시간 상한과 별개인 하드 백스톱)
-  function offlineStep(g){
+  // ---- 오프라인 누적(A4/H2): 실시각 계산은 ui.js 몫(Date.now()) — 여긴 "틱 수"만 받아 진행.
+  // 경제·생산·연구·건설 + PvE 자동사냥(H2) + 밖에 나간 부대 확률적 견제 전투(H2)까지 돌린다.
+  // 단 대규모 전쟁(AI 원정대·시즌 침공)과 수도 공방은 오프라인에서 스킵 — 자리 비운 사이 왕국이 함락되진 않게(전쟁은 접속해서 즐기는 몫).
+  const OFFLINE_MAX_TICKS=20000, OFF_HUNT_EVERY=3, OFF_HUNT_COOLDOWN=600, OFF_HARASS_CHANCE=0.00012;   // 사냥 판정 간격 + 부대당 사냥 쿨다운(장시간 방치 무한 파밍 방지, ~시간당 2~3회), 견제 발생 확률
+  // 견제 습격대: 기회주의적 약탈대(맞춤 카운터 아님 → pickAIUnit(null)). 목표 부대 전력의 25~55%로 편성 →
+  // 잘 갖춘 부대는 대체로 방어 성공, 구성이 나쁘거나 운 나쁠 때만 짐(간헐적 손실 — 방치 긴장감).
+  function makeHarassForce(g,target){ const t=aiTierOf(g);
+    let budget=compPower(target.comp)*(0.2+Math.random()*0.3), comp={}, guard=0;
+    while(budget>0&&guard++<300){ const u=pickAIUnit(null), key=uk(u,t); comp[key]=(comp[key]||0)+1; budget-=unitScore(u,t)||30; }
+    return {id:newId(g,"EH"),side:"E",node:target.node,name:"견제 습격대",comp,hero:null,role:"attack",target:target.node}; }
+  function offlineStep(g,rep){
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving=g.res.식량<0; if(g.starving)g.res.식량=0;
     autoProduceTick(g); tickProduction(g);
-    if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
-    if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){completeBuild(g,g.castle.build);g.castle.build=null;}}
+    if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});if(rep)rep.research.push(k);}}
+    if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){if(rep)rep.built.push(g.castle.build.label);completeBuild(g,g.castle.build);g.castle.build=null;}}
     let heal=(g.castle.econ["병원"]||0)*3;
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
+    // H2: 오프라인 사냥 — a.hunt 부대가 이길 만한 몬스터를 쿨다운 간격으로 처치(보상·부상은 온라인과 동일한 grantMonsterReward 경로).
+    if(rep && g.turn%OFF_HUNT_EVERY===0){ rep._huntCd=rep._huntCd||{};
+      for(const a of g.armies){ if(a.side!=="P"||!a.hunt||troops(a)<=0) continue;
+        if(g.turn-(rep._huntCd[a.id]||-99999) < OFF_HUNT_COOLDOWN) continue;   // 쿨다운 — 무한 파밍 방지
+        const m=nearestWinnableMonster(g,a); if(!m) continue;
+        const s=resolveBattle(g,a,m,m.node);
+        if(s.w==="A"){ rep._huntCd[a.id]=g.turn; rep.hunts++;
+          if(s.reward)for(const r in s.reward)rep.huntRewards[r]=(rep.huntRewards[r]||0)+s.reward[r];
+          for(const [k,lab] of [["xp","경험치"],["dragonScale","용린"],["materials","재료"],["blueprints","설계도"],["subdue","토벌"],["lordXp","군주경험치"]]) if(s[k])rep.huntRewards[lab]=(rep.huntRewards[lab]||0)+s[k]; } }
+    }
+    // H2: 오프라인 견제 — 밖에 나가있는(채집·사냥) 부대가 확률적으로 습격받음. 병력 구성으로 승패가 갈림(수도 수비대는 오프라인 안전).
+    if(rep){ const out=g.armies.filter(a=>a.side==="P"&&a.node!=="P"&&troops(a)>0);
+      if(out.length && Math.random()<OFF_HARASS_CHANCE*out.length){
+        const target=out[Math.floor(Math.random()*out.length)];
+        const s=resolveBattle(g,makeHarassForce(g,target),target,target.node);
+        rep.skirmishes++;
+        if(s.w==="B") rep.skirmishWins++;                          // 부대가 견제 격퇴
+        else if(s.w==="A"){ rep.skirmishLosses++; rep.lostArmies++; } } }   // 부대 전멸
     g.turn++; tavernTick(g); processRespawns(g); questTick(g); milestoneTick(g); dragonTick(g); lordTick(g);
   }
   function offlineTick(g,ticks){ ticks=Math.max(0,Math.min(ticks|0,OFFLINE_MAX_TICKS));
-    const t0=g.turn; for(let i=0;i<ticks;i++) offlineStep(g); return {ticks,turns:g.turn-t0}; }
+    const rep={hunts:0,huntRewards:{},skirmishes:0,skirmishWins:0,skirmishLosses:0,lostArmies:0,built:[],research:[]};
+    const res0={...g.res}, might0=computeMight(g), t0=g.turn;
+    for(let i=0;i<ticks;i++) offlineStep(g,rep);
+    rep.ticks=ticks; rep.turns=g.turn-t0; rep.mightGain=computeMight(g)-might0;
+    rep.resGain={}; for(const r of RES){ const d=Math.round(g.res[r]-res0[r]); if(d)rep.resGain[r]=d; }
+    return rep; }
 
   API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
     TIER_MAX,TIER_NAME,tierCap,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,

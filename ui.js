@@ -613,21 +613,25 @@ function importFile(file){const r=new FileReader();r.onload=()=>{try{const data=
   applySave(data); toast("⬆ 가져왔습니다 — 턴 "+state.turn); offlineCatchup(data);
 }catch(e){toast("⚠ 파일 형식 오류");}};r.readAsText(file);}
 // ---- 오프라인 누적(A4) — 실시각(Date.now())은 여기(ui.js)에서만 다룸. 계산 자체는 game.js의 순수 offlineTick.
-const OFFLINE_MAX_HOURS=12;   // 한 번에 인정하는 오프라인 시간 상한
+const OFFLINE_MAX_HOURS=24;   // 방치형: 한 번에 인정하는 오프라인 시간 상한(스태미나 없음, 상한만 조정)
 function offlineCatchup(data){
   if(!data.savedAt||state.over) return;
   const elapsedMs=Date.now()-data.savedAt;
   const ticks=Math.floor(Math.min(elapsedMs,OFFLINE_MAX_HOURS*3600*1000)/RT_BASE);
   if(ticks<1) return;
-  const before={...state.res};
-  const r=Game.offlineTick(state,ticks);
+  const r=Game.offlineTick(state,ticks);   // H2/H4: 경제+자동사냥+견제까지 정산, 리포트 반환
   render(); saveLocal(true);
-  const gain=Game.RES.map(k=>`${k} +${Math.max(0,state.res[k]-before[k])}`).join(" · ");
   const hrs=elapsedMs/3600000;
-  showModal(`<h2>🌙 자리를 비운 사이…</h2>
-    <div class="res-line">약 ${hrs<1?Math.round(hrs*60)+"분":hrs.toFixed(1)+"시간"} 동안 <b>${r.turns}틱</b> 자동 진행됨.</div>
-    <div class="res-line k">${gain}</div>
-    <button class="minibtn" id="modalClose">확인</button>`);
+  const resLine=Game.RES.map(k=>(r.resGain&&r.resGain[k])?`${k} ${r.resGain[k]>0?"+":""}${r.resGain[k]}`:null).filter(Boolean).join(" · ")||"변동 없음";
+  const rw=r.huntRewards?Object.entries(r.huntRewards).map(([k,v])=>`${k}+${v}`).join(" · "):"";
+  let h=`<div class="res-line">약 ${hrs<1?Math.round(hrs*60)+"분":hrs.toFixed(1)+"시간"} 동안 <b>${r.turns}틱</b> 자동 진행.</div>`;
+  h+=`<div class="res-line k">📦 자원 ${resLine}</div>`;
+  if(r.hunts) h+=`<div class="res-line" style="color:var(--green)">⚔ 자동 사냥 ${r.hunts}회${rw?` — ${rw}`:""}</div>`;
+  if(r.skirmishes) h+=`<div class="res-line" style="color:${r.lostArmies?'var(--red)':'var(--blue)'}">🛡 견제 전투 ${r.skirmishes}회 · 방어 성공 ${r.skirmishWins}${r.lostArmies?` · 부대 손실 ${r.lostArmies} ⚠`:""}</div>`;
+  if(r.built&&r.built.length) h+=`<div class="res-line">🏗 건설 완료 — ${r.built.join(", ")}</div>`;
+  if(r.research&&r.research.length) h+=`<div class="res-line">🔬 연구 완료 — ${r.research.join(", ")}</div>`;
+  h+=`<div class="res-line k">국력 ${r.mightGain>=0?"+":""}${r.mightGain}</div>`;
+  showModal(`<h2>🌙 자리를 비운 사이…</h2>${h}<button class="minibtn" id="modalClose">확인</button>`);
 }
 function newGameReset(){if(!confirm("새 게임을 시작할까요? 저장 안 한 진행은 사라집니다."))return;applySave({...Game.newGame(),ancientOwner:null});toast("🆕 새 게임");}
 document.getElementById('saveBtn').onclick=()=>saveLocal(false);
