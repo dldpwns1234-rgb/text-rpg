@@ -828,6 +828,9 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
       if(a.dest && a.node!==a.dest) continue;   // 이미 이동 중이면 유지
       const m=nearestWinnableMonster(g,a); if(m && m.node!==a.node) orderMove(g,a.id,m.node); } }
   function setHunt(g,armyId,on){ const a=findArmy(g,armyId); if(a) a.hunt=!!on; return null; }
+  // G-F: 전군 소집 — 사냥/원정 나간 모든 P부대를 성으로 귀환시켜 방어전 합류(defendCastle이 P의 pArmies를 수비에 포함).
+  // 자동사냥은 끄고 부름(안 그러면 도착 즉시 다시 사냥 나감). 시즌 예고에 능동 대응하는 "전쟁 준비" 순간.
+  function rallyToDefense(g){ let n=0; for(const a of g.armies){ if(a.side==="P"&&a.node!=="P"){ a.hunt=false; orderMove(g,a.id,"P"); n++; } } return n; }
 
   // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
   const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
@@ -1185,7 +1188,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
-    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,
+    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,rallyToDefense,
     produce,setAutoProduce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
@@ -1368,8 +1371,12 @@ function renderSeason(){
   const s=state.season; if(!s) return "";
   const left=Math.max(0,s.next-state.turn);
   const hint=s.warned&&s.previewUnit?` · 예상 주력 <b>${s.previewUnit}</b>`:"";
+  // G-F: 예고 중 + 나가있는 부대가 있으면 "전군 소집" 버튼 — 사냥 나간 부대를 불러 방어 준비.
+  const away=state.armies.filter(a=>a.side==="P"&&a.node!=="P").length;
+  const rally=(s.warned&&away>0)?`<button class="minibtn" id="rallyBtn" style="margin-top:6px;border-color:var(--red);color:#fca5a5">⚔ 전군 소집 (${away}개 부대 귀환)</button>`:"";
   return `<div style="background:var(--bg);border:1px solid ${s.warned?'var(--red)':'var(--line)'};border-radius:10px;padding:8px 10px;margin-bottom:10px">
     <div style="font-size:11px;color:${s.warned?'#fca5a5':'#94a3b8'}">${s.warned?"⚠ 대침공 예고!":"🗓 다음 시즌"} <b>${s.count}차</b> <span class="k">— ${left}턴 후 도착</span>${hint}</div>
+    ${rally}
   </div>`;
 }
 // 🏴 알려진 습격 세력 — 이름·주력 병종을 상시 표시(정보 없이 오는 위협이 아니게).
@@ -1707,6 +1714,7 @@ function renderPanel(){
   p.innerHTML=h;
   // 핸들러
   const infoT=p.querySelector('#infoToggle'); if(infoT) infoT.onclick=()=>{state.infoOpen=!(state.infoOpen!==false);render();};
+  const rl=p.querySelector('#rallyBtn'); if(rl) rl.onclick=()=>{const n=Game.rallyToDefense(state); toast(n?`⚔ ${n}개 부대 소집 — 성으로 귀환 중`:"소집할 부대 없음"); render();};
   p.querySelectorAll('[data-bld]').forEach(b=>b.onclick=()=>{state.castle.openBuilding=b.dataset.bld;render();});
   p.querySelectorAll('[data-construct]').forEach(b=>b.onclick=()=>construct(b.dataset.construct));
   p.querySelectorAll('select[id^="tier_"]').forEach(s=>s.onchange=()=>{state.prodTier[s.id.slice(5)]=+s.value;});

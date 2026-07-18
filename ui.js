@@ -35,8 +35,12 @@ function renderSeason(){
   const s=state.season; if(!s) return "";
   const left=Math.max(0,s.next-state.turn);
   const hint=s.warned&&s.previewUnit?` · 예상 주력 <b>${s.previewUnit}</b>`:"";
+  // G-F: 예고 중 + 나가있는 부대가 있으면 "전군 소집" 버튼 — 사냥 나간 부대를 불러 방어 준비.
+  const away=state.armies.filter(a=>a.side==="P"&&a.node!=="P").length;
+  const rally=(s.warned&&away>0)?`<button class="minibtn" id="rallyBtn" style="margin-top:6px;border-color:var(--red);color:#fca5a5">⚔ 전군 소집 (${away}개 부대 귀환)</button>`:"";
   return `<div style="background:var(--bg);border:1px solid ${s.warned?'var(--red)':'var(--line)'};border-radius:10px;padding:8px 10px;margin-bottom:10px">
     <div style="font-size:11px;color:${s.warned?'#fca5a5':'#94a3b8'}">${s.warned?"⚠ 대침공 예고!":"🗓 다음 시즌"} <b>${s.count}차</b> <span class="k">— ${left}턴 후 도착</span>${hint}</div>
+    ${rally}
   </div>`;
 }
 // 🏴 알려진 습격 세력 — 이름·주력 병종을 상시 표시(정보 없이 오는 위협이 아니게).
@@ -374,6 +378,7 @@ function renderPanel(){
   p.innerHTML=h;
   // 핸들러
   const infoT=p.querySelector('#infoToggle'); if(infoT) infoT.onclick=()=>{state.infoOpen=!(state.infoOpen!==false);render();};
+  const rl=p.querySelector('#rallyBtn'); if(rl) rl.onclick=()=>{const n=Game.rallyToDefense(state); toast(n?`⚔ ${n}개 부대 소집 — 성으로 귀환 중`:"소집할 부대 없음"); render();};
   p.querySelectorAll('[data-bld]').forEach(b=>b.onclick=()=>{state.castle.openBuilding=b.dataset.bld;render();});
   p.querySelectorAll('[data-construct]').forEach(b=>b.onclick=()=>construct(b.dataset.construct));
   p.querySelectorAll('select[id^="tier_"]').forEach(s=>s.onchange=()=>{state.prodTier[s.id.slice(5)]=+s.value;});

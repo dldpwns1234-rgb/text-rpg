@@ -572,6 +572,9 @@
       if(a.dest && a.node!==a.dest) continue;   // 이미 이동 중이면 유지
       const m=nearestWinnableMonster(g,a); if(m && m.node!==a.node) orderMove(g,a.id,m.node); } }
   function setHunt(g,armyId,on){ const a=findArmy(g,armyId); if(a) a.hunt=!!on; return null; }
+  // G-F: 전군 소집 — 사냥/원정 나간 모든 P부대를 성으로 귀환시켜 방어전 합류(defendCastle이 P의 pArmies를 수비에 포함).
+  // 자동사냥은 끄고 부름(안 그러면 도착 즉시 다시 사냥 나감). 시즌 예고에 능동 대응하는 "전쟁 준비" 순간.
+  function rallyToDefense(g){ let n=0; for(const a of g.armies){ if(a.side==="P"&&a.node!=="P"){ a.hunt=false; orderMove(g,a.id,"P"); n++; } } return n; }
 
   // ---- 액션 (g 변경, 실패 시 메시지 반환 / 성공 시 null) ----
   const maxTierFor=(g,u)=>{const b=UNIT_BLD[u];return b?(g.castle.blevel[b]||0):0;};
@@ -929,7 +932,7 @@
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
-    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,
+    MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,rallyToDefense,
     produce,setAutoProduce,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
