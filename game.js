@@ -318,7 +318,12 @@
     const wound=(army,before,after,hero)=>{if(army.side!=="P")return 0;let t=0;
       const wr=Math.max(0,WOUND_RATE-(hero?traitSum(hero,"woundReduce"):0));   // 인내형 특성: 부상률 완화
       for(const u in before){const lost=(before[u]||0)-(after[u]||0);if(lost>0){const w=Math.round(lost*wr);if(w>0){g.castle.wounded[u]=(g.castle.wounded[u]||0)+w;t+=w;}}}return t;};
+    // E3(전투 연출): 라운드 수·특수/요격 총계로 "어떤 전투였는지" 체감을 살림. 승자 측 생존율로 압승/신승/박빙 판정.
+    const initA=Object.values(beforeA).reduce((x,v)=>x+v,0), initB=Object.values(beforeB).reduce((x,v)=>x+v,0);
+    const survRate = res.w==="A"?(initA?res.survA/initA:0) : res.w==="B"?(initB?res.survB/initB:0) : null;
+    const margin = survRate==null?null : survRate>=0.7?"압승":survRate>=0.35?"신승":"박빙";
     const sum={attacker:attacker.name,defender:defender.name,aSide:attacker.side,fort:fort||ancientHold,w:res.w,survA:res.survA,survB:res.survB,siegeUsed,
+      rounds:res.rounds,totalProc:res.totalProc,totalCounter:res.totalCounter,margin,
       heroA:aHero?aHero.name:null,heroB:dHero?dHero.name:null,
       buffA:aHero?Math.round(aB*100):0, buffB:dHero?Math.round(dB*100):0,
       gradeA:aHero?aHero.grade:0, gradeB:dHero?dHero.grade:0,

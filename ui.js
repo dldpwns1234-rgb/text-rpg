@@ -444,6 +444,7 @@ function showModal(html){document.getElementById('modalBody').innerHTML=html;
   document.getElementById('modal').classList.remove('hidden');
   const c=document.getElementById('modalClose'); if(c)c.onclick=hideModal;}
 function hideModal(){document.getElementById('modal').classList.add('hidden');}
+const MARGIN_TAG={압승:"🟢 압승",신승:"🟡 신승",박빙:"🟠 박빙"};
 function showBattleModal(sum){
   const pWon=(sum.w==="A"&&sum.aSide==="P")||(sum.w==="B"&&sum.aSide==="E");
   const tag=sum.w==="draw"?'<span class="k">무승부</span>':(pWon?'<span style="color:var(--blue)">🔵 아군 우세</span>':'<span style="color:var(--red)">🔴 적 우세</span>');
@@ -451,10 +452,15 @@ function showBattleModal(sum){
   const heroLine=(sum.heroA||sum.heroB)?`<div class="res-line" style="color:var(--gold);font-size:12px">${[sum.heroA?`공격 ${stars(sum.gradeA)} ${sum.heroA}(+${sum.buffA}%)`:"",sum.heroB?`수비 ${stars(sum.gradeB)} ${sum.heroB}(+${sum.buffB}%)`:""].filter(Boolean).join(" · ")}</div>`:"";
   const dragonLine=(sum.dragonA||sum.dragonB)?`<div class="res-line" style="color:#c084fc;font-size:12px">🐉 ${sum.dragonA?"공격":"수비"} 참전 · ${sum.dragonStage}</div>`:"";
   const enrageLine=sum.enrageLoss?`<div class="res-line" style="color:#f87171;font-size:12px">💢 고대 생물이 포효하며 선제 강타! 공격측 병력 -${sum.enrageLoss}%</div>`:"";
+  // E3(전투 연출): 라운드 수·특수 발동·창병 요격 총계 + 승패 마진 태그로 "어떤 전투였는지" 체감 강화
+  const marginTag=sum.margin?` · ${MARGIN_TAG[sum.margin]}`:"";
+  const detailBits=[sum.rounds!=null?`${sum.rounds}R 만에 결판`:"",sum.totalProc?`특수 ${sum.totalProc}회`:"",sum.totalCounter?`창병 요격 ${sum.totalCounter}회`:""].filter(Boolean).join(" · ");
+  const detailLine=detailBits?`<div class="res-line k" style="font-size:12px">${detailBits}${marginTag}</div>`:"";
   showModal(`<h2>⚔️ 전투</h2>
     <div class="res-line">${sum.attacker} <span class="k">→</span> ${sum.defender}${sum.fort?' <span class="k">(방어 보정)</span>':''}</div>
     ${enrageLine}${heroLine}${dragonLine}
     <div class="res-line">${tag}</div><div class="res-line"><b>${sum.result}</b></div>
+    ${detailLine}
     <div class="res-line k">생존 — 공격 ${sum.survA} · 수비 ${sum.survB}</div>
     <button class="minibtn" id="modalClose">확인</button>`);
 }

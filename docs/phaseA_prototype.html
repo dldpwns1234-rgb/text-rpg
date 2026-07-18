@@ -216,12 +216,13 @@ function simulate(compA,heroA,compB,heroB,maxRounds,modsA,modsB){
   const hp=r=>allStacks(r).reduce((x,s)=>x+s.pool,0);
   const h0A=hp(A), h0B=hp(B);
   const frames=[{round:0,A:snapshot(A),B:snapshot(B),log:"전투 개시!"}];
-  let r=0;
+  let r=0, totalProc=0, totalCounter=0;
   for(let i=0;i<maxRounds;i++){
     if(wiped(A)||wiped(B)) break;
     const ev={proc:0,counter:0};
     const preA=allStacks(A).reduce((x,s)=>x+aliveCount(s),0), preB=allStacks(B).reduce((x,s)=>x+aliveCount(s),0);
     resolveRound(A,B,ev); r++;
+    totalProc+=ev.proc; totalCounter+=ev.counter;
     const postA=allStacks(A).reduce((x,s)=>x+aliveCount(s),0), postB=allStacks(B).reduce((x,s)=>x+aliveCount(s),0);
     let log=`R${r}: 아군 -${preA-postA}, 적 -${preB-postB}`;
     if(ev.proc) log+=` · 특수 ${ev.proc}회`;
@@ -233,7 +234,7 @@ function simulate(compA,heroA,compB,heroB,maxRounds,modsA,modsB){
   else if(wiped(B)&&!wiped(A)) w="A";
   else if(wiped(A)&&wiped(B)) w="draw";
   else { const fa=h0A?hp(A)/h0A:0, fb=h0B?hp(B)/h0B:0; w=Math.abs(fa-fb)<0.05?"draw":(fa>fb?"A":"B"); }
-  return {frames, w, rounds:r,
+  return {frames, w, rounds:r, totalProc, totalCounter,
     survA:allStacks(A).reduce((x,s)=>x+aliveCount(s),0),
     survB:allStacks(B).reduce((x,s)=>x+aliveCount(s),0)};
 }
