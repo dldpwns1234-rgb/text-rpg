@@ -19,9 +19,9 @@
   const GATHER_BASE=6, GATHER_HERO=1.5, ARMY_CAP=20, ECON_CAP=20, WOUND_RATE=0.35;
   const ARMY_SLOTS_BASE=3;  // 운용 부대 수 상한(§9): 기본 + 성 레벨 + 연구. 총군사력 = 부대수 × ARMY_CAP
   const UPKEEP_RATE=0.2, UPKEEP_FREE=20;  // 식량 유지비: FREE 초과 병력 1당 매턴 소모(대군 소프트 상한). 고갈 시 생산 중단
-  const XP_REWARD={사냥:1,토벌:2,레이드:3};      // 몬스터 처치 → 경험치 아이템
+  const XP_REWARD={사냥:2,토벌:4,레이드:8};      // 몬스터 처치 → 경험치 아이템 (G-D: 승급이 느려 정체 → 상향)
   const PROMOTE_COST={1:2,2:4};                  // ★1→2 : 2, ★2→3 : 4 (경험치 아이템)
-  const DRAGON_SCALE_REWARD={사냥:0,토벌:2,레이드:8};   // 몬스터 처치 → 용린(드래곤 전용 육성 자원, C1). 레이드가 크게 줘서 고대성 도전과 자연히 엮임.
+  const DRAGON_SCALE_REWARD={사냥:1,토벌:4,레이드:16};   // 몬스터 처치 → 용린(드래곤 전용 육성 자원, C1). G-D: 사냥이 0을 줘 초반 드래곤 정체 → 1+로. 레이드가 크게 줘 고대성 도전과 엮임.
   // 드래곤 단계(퀘스트/마일스톤과 같은 순차 idx 패턴). 알 단계는 buff:0 → 별도 조건문 없이 "전투 참여 못 함"과 동치.
   const DRAGON_STAGES=[
     {id:"egg",  name:"알",     need:0,  buff:0,    desc:"용린을 모아 부화시키자."},
@@ -45,9 +45,11 @@
 
   // ==== F4: 군주(Lord) + 군주 장비 ====================================================
   // 몬스터 처치 → 군주 경험치/재료/설계도(전부 몬스터 티어 기준 — 종류별이 아니라 XP_REWARD 등과 완전히 같은 패턴).
-  const LORD_XP_REWARD={사냥:1,토벌:3,레이드:8};
-  const MATERIAL_REWARD={사냥:1,토벌:2,레이드:5};
-  const BLUEPRINT_REWARD={사냥:0,토벌:1,레이드:2};
+  // G-D(2026-07-18): 실제 플레이 진단 결과 킬당 "+1" 트리클로 군주·드래곤 시스템이 시동조차 안 걸림 → 상향.
+  // 자동사냥(G-A)이 킬 빈도를 크게 올리므로 per-kill은 "초라해 보이지 않는" 선까지만, 나머지는 빈도로 해결.
+  const LORD_XP_REWARD={사냥:2,토벌:6,레이드:16};
+  const MATERIAL_REWARD={사냥:2,토벌:4,레이드:10};
+  const BLUEPRINT_REWARD={사냥:1,토벌:2,레이드:4};
   const lordXPNeed=lv=>Math.round(15*Math.pow(1.35,lv-1));
   // 재능 3트리(전투/경제/개발) — RESEARCH와 같은 req 체인이지만 자원 대신 talentPoints 소모, 턴 대기 없이 즉시 적용.
   // 필드는 기존 4개 소비 지점(buildRate/econIncome/foodUpkeep/startResearch)+resolveBattle이 이미 아는 어휘만 사용 — 새 통합 지점 없음.
@@ -363,6 +365,14 @@
   const compArr=a=>Object.entries(a.comp).map(([k,count])=>({name:baseOf(k),count,tier:tierOf(k)}));
   const hasCombatHero=(g,a)=>a.hero&&heroById(g,a.hero)?.type==="전투";
   function removeArmy(g,a){g.heroes.forEach(h=>{if(h.loc===a.id)h.loc="idle";});g.armies=g.armies.filter(x=>x!==a);}
+  // G-D: P가 적(E) 위협군(습격대·시즌침공·원정대)을 격파하면 병력 규모 비례 보상 — 방어/야전 승리가 남는 장사가 되게.
+  // (적 수도 정복은 checkVictory가 별도 처리 — 여긴 야전 격파/수성 승리만.)
+  function threatKillReward(g,foe,sum){ const n=troops(foe); if(n<=0) return "";
+    const rw={식량:n, 철:Math.round(n*0.6), 목재:Math.round(n*0.4)};
+    for(const r in rw) g.res[r]=(g.res[r]||0)+rw[r];
+    const xp=Math.max(1,Math.floor(n/8)); g.xpItems=(g.xpItems||0)+xp; g.lord.xp=(g.lord.xp||0)+xp;
+    sum.threatReward={...rw, 경험치:xp, 군주경험치:xp};
+    return ` · 격퇴 보상 ${Object.entries(rw).map(([r,v])=>`${r}+${v}`).join(" ")} · 경험치+${xp} · 군주경험치+${xp}`; }
   function resolveBattle(g,attacker,defender,node){
     const fort=NODES[node].type==="castle"&&NODES[node].owner===defender.side;
     const ancientHold=node==="ANCIENT"&&NODES.ANCIENT.owner===defender.side; // 고대성 방어 보정
@@ -424,9 +434,12 @@
           g.raidBossGen=(g.raidBossGen||0)+1;
           (g.respawns=g.respawns||[]).push({ancient:true,at:g.turn+RESPAWN_DELAY*3});
         }}
+      if(attacker.side==="P"&&defender.side==="E") rw+=threatKillReward(g,defender,sum);   // G-D: 야전에서 적 위협군 격파
       sum.result=`${attacker.name} ${defender.side==="M"?"소탕 성공":"승리"} · ${defender.name} ${defender.side==="M"?"소멸":"전멸"}${rw}`+(wd?` · 부상 ${wd}`:"");
       removeArmy(g,defender); attacker.node=node; }
-    else if(res.w==="B"){ defender.comp=rB; const wd=wound(defender,beforeB,rB,dHero); sum.result=`${defender.name} 방어 · ${attacker.name} 전멸`+(wd?` · 부상 ${wd}`:""); removeArmy(g,attacker); }
+    else if(res.w==="B"){ defender.comp=rB; const wd=wound(defender,beforeB,rB,dHero);
+      let rw2=""; if(defender.side==="P"&&attacker.side==="E") rw2=threatKillReward(g,attacker,sum);   // G-D: 수성/야전 수비 승리로 적 위협군 격퇴
+      sum.result=`${defender.name} 방어 · ${attacker.name} 전멸${rw2}`+(wd?` · 부상 ${wd}`:""); removeArmy(g,attacker); }
     else { attacker.comp=rA; defender.comp=rB; wound(attacker,beforeA,rA,aHero); wound(defender,beforeB,rB,dHero); sum.result="무승부 · 양측 생존"; }
     return sum;
   }
