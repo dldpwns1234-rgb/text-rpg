@@ -29,12 +29,17 @@
     {id:"juv",  name:"어린 용", need:60, buff:0.35, desc:"전투 참여 시 버프 +35%"},
     {id:"adult",name:"성체 용", need:140,buff:0.65, desc:"전투 참여 시 버프 +65%"},
   ];
-  // 드래곤 스킬: 단계가 오를 때마다(3번, egg 제외) 2択으로 하나씩 골라 누적 — 영웅 승급 특성 2択과 같은 패턴 재사용.
+  // F3(드래곤 트리): 2択 누적 방식을 폐기하고 RESEARCH와 같은 req 체인 4갈래(공격/수비/경제/대몬스터)로 재설계.
+  // 스킬 포인트는 단계 상승이 아니라 용린 누적량(dragonTick)에서 지급 — 만렙(성체) 이후에도 트리 성장 가능.
   const DRAGON_SKILLS=[
-    {id:"flame", name:"화염 숨결",   desc:"전투 참여 시 버프 +10%p 추가(공격)",atkBonus:0.10},
-    {id:"scale", name:"비늘 강화",   desc:"전투 참여 시 버프 +10%p 추가(수비)",defBonus:0.10},
-    {id:"hunter",name:"괴수 사냥꾼",  desc:"몬스터 상대 버프 +15%p 추가",vsMonsterBonus:0.15},
-    {id:"roar",  name:"위압의 포효",  desc:"습격 세력 규모 -10%",factionReduce:0.10},
+    {id:"flame1", name:"화염 숨결 I",  cat:"공격",  req:[],        desc:"전투 참여 시 공격 버프 +10%p",atkBonus:0.10},
+    {id:"flame2", name:"화염 숨결 II", cat:"공격",  req:["flame1"],desc:"공격 버프 +10%p (누적)",atkBonus:0.10},
+    {id:"scale1", name:"비늘 강화 I",  cat:"수비",  req:[],        desc:"전투 참여 시 수비 버프 +10%p",defBonus:0.10},
+    {id:"scale2", name:"비늘 강화 II", cat:"수비",  req:["scale1"],desc:"수비 버프 +10%p (누적)",defBonus:0.10},
+    {id:"hunter1",name:"괴수 사냥꾼 I", cat:"대몬스터",req:[],        desc:"몬스터 상대 버프 +15%p",vsMonsterBonus:0.15},
+    {id:"hunter2",name:"괴수 사냥꾼 II",cat:"대몬스터",req:["hunter1"],desc:"몬스터 상대 버프 +10%p (누적)",vsMonsterBonus:0.10},
+    {id:"roar1",  name:"위압의 포효 I", cat:"경제",  req:[],        desc:"습격 세력 규모 -10%",factionReduce:0.10},
+    {id:"roar2",  name:"위압의 포효 II",cat:"경제",  req:["roar1"], desc:"습격 세력 규모 -5%p (누적)",factionReduce:0.05},
   ];
   const dragonSkillSum=(g,field)=>((g.dragon&&g.dragon.skills)||[]).reduce((s,id)=>{const sk=DRAGON_SKILLS.find(x=>x.id===id);return s+((sk&&sk[field])||0);},0);
   const wallCost=lv=>({석재:25+lv*20,철:5+lv*4}); // 성벽 보강(반복형 석재 소비처) — 수성 방어↑
@@ -226,7 +231,7 @@
     season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
     factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
     pendingPromote:null,   // 영웅 승급 특성 선택 대기(C2)
-    dragon:{stage:0,skills:[]}, dragonScale:0, pendingDragonSkill:null,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음)
+    dragon:{stage:0,skills:[],skillPoints:0,scaleSpent:0}, dragonScale:0,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음). F3: 스킬은 req 트리+skillPoints로 획득(2択 폐기)
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -722,25 +727,25 @@
   }
 
   // ---- 드래곤(C1) 단계 진행: 용린 누적에 따라 순차 성장(퀘스트/마일스톤과 같은 패턴) ----
+  // F3: 스킬은 더 이상 단계 상승에 묶이지 않음 — 용린이 SKILL_POINT_GAP만큼 쌓일 때마다 포인트 지급(성체 도달 후에도 계속 성장 가능).
+  const SKILL_POINT_GAP=30;
   function dragonTick(g){
-    if(!g.dragon) g.dragon={stage:0,skills:[]};
-    if(g.pendingDragonSkill) return [];   // 스킬 선택 대기 중엔 다음 단계로 안 넘어감(승급 특성 2択과 같은 흐름)
+    if(!g.dragon) g.dragon={stage:0,skills:[],skillPoints:0,scaleSpent:0};
+    if(g.dragon.skillPoints===undefined) g.dragon.skillPoints=0;
+    if(g.dragon.scaleSpent===undefined) g.dragon.scaleSpent=0;
     const completed=[];
     while(g.dragon.stage<DRAGON_STAGES.length-1 && (g.dragonScale||0)>=DRAGON_STAGES[g.dragon.stage+1].need){
       g.dragon.stage++; completed.push(DRAGON_STAGES[g.dragon.stage]);
-      const have=new Set(g.dragon.skills||[]);
-      let cands=DRAGON_SKILLS.filter(s=>!have.has(s.id)); if(cands.length<2) cands=DRAGON_SKILLS;
-      const src=[...cands], picks=[];
-      while(picks.length<2 && src.length) picks.push(src.splice(Math.floor(Math.random()*src.length),1)[0]);
-      while(picks.length<2 && cands.length) picks.push(cands[Math.floor(Math.random()*cands.length)]);
-      g.pendingDragonSkill={options:picks.map(s=>s.id)};
-      break;   // 한 틱에 한 단계만 — 선택 확정 후 다음 tick에서 이어서 검사
     }
+    while((g.dragonScale||0)-g.dragon.scaleSpent>=SKILL_POINT_GAP){ g.dragon.scaleSpent+=SKILL_POINT_GAP; g.dragon.skillPoints++; }
     return completed;
   }
-  function chooseDragonSkill(g,skillId){ const pp=g.pendingDragonSkill; if(!pp)return"대기 중인 선택 없음";
-    if(!pp.options.includes(skillId))return"잘못된 선택";
-    g.dragon.skills=g.dragon.skills||[]; g.dragon.skills.push(skillId); g.pendingDragonSkill=null; return null; }
+  // F3: RESEARCH의 req 체크와 동일한 모양 — 자원 대신 skillPoints 1점 소모, 턴 대기 없이 즉시 습득.
+  function investDragonSkill(g,skillId){ const sk=DRAGON_SKILLS.find(s=>s.id===skillId); if(!sk)return"잘못된 스킬";
+    g.dragon.skills=g.dragon.skills||[]; if(g.dragon.skills.includes(skillId))return null;
+    if(!(sk.req||[]).every(r=>g.dragon.skills.includes(r)))return"선행 스킬 필요";
+    if((g.dragon.skillPoints||0)<1)return"스킬 포인트 부족";
+    g.dragon.skillPoints--; g.dragon.skills.push(skillId); return null; }
 
   // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
   function endTurn(g){
@@ -789,7 +794,7 @@
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,armyCapFor,
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
-    DRAGON_STAGES,DRAGON_SKILLS,dragonTick,chooseDragonSkill,assignDragon,dragonLoc,
+    DRAGON_STAGES,DRAGON_SKILLS,dragonTick,investDragonSkill,assignDragon,dragonLoc,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
