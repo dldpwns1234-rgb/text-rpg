@@ -282,18 +282,30 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     {id:"juv",  name:"어린 용", need:60, buff:0.35, desc:"전투 참여 시 버프 +35%"},
     {id:"adult",name:"성체 용", need:140,buff:0.65, desc:"전투 참여 시 버프 +65%"},
   ];
+  // 드래곤 스킬: 단계가 오를 때마다(3번, egg 제외) 2択으로 하나씩 골라 누적 — 영웅 승급 특성 2択과 같은 패턴 재사용.
+  const DRAGON_SKILLS=[
+    {id:"flame", name:"화염 숨결",   desc:"전투 참여 시 버프 +10%p 추가(공격)",atkBonus:0.10},
+    {id:"scale", name:"비늘 강화",   desc:"전투 참여 시 버프 +10%p 추가(수비)",defBonus:0.10},
+    {id:"hunter",name:"괴수 사냥꾼",  desc:"몬스터 상대 버프 +15%p 추가",vsMonsterBonus:0.15},
+    {id:"roar",  name:"위압의 포효",  desc:"습격 세력 규모 -10%",factionReduce:0.10},
+  ];
+  const dragonSkillSum=(g,field)=>((g.dragon&&g.dragon.skills)||[]).reduce((s,id)=>{const sk=DRAGON_SKILLS.find(x=>x.id===id);return s+((sk&&sk[field])||0);},0);
   const wallCost=lv=>({석재:25+lv*20,철:5+lv*4}); // 성벽 보강(반복형 석재 소비처) — 수성 방어↑
   const HERO_BUFF=0.20, HP_SCALE=1.0;  // HP 전역 배율. 1.4는 티어테스트 잔재로 삼각(기병>궁병)을 깨뜨려 1.0으로 정정(§7). 1.0=항등 → 실제 전투가 verify.js 검증 조건과 일치.
   // ---- 영웅 등급(★1~3): 등급이 버프 세기 결정 ----
   const GRADE_BUFF={1:0.15,2:0.20,3:0.28}, GRADE_GATHER={1:1.4,2:1.5,3:1.7};
   // 영웅 특성(trait): 등급 승급은 항상 "예"인 무결정이라, 대신 영입 시점에 특성이 붙어 "어느 후보를 뽑을까"가 진짜 결정이 되게 함.
   const HERO_TRAITS={
-    전투:[ {id:"assault",name:"돌격형",desc:"공격 시 버프 +5%p",atkBonus:0.05},
-           {id:"guard",  name:"수호형",desc:"수비 시 버프 +8%p",defBonus:0.08},
-           {id:"swift",  name:"기동형",desc:"부대 이동 1틱 단축(행군술과 중첩)",moveBonus:1} ],
-    내정:[ {id:"builder",name:"건축가",desc:"건설 속도 +1",buildBonus:1},
-           {id:"scholar",name:"학자",  desc:"연구 시작 시 소요 턴 −1",researchBonus:1},
-           {id:"trader", name:"상인",  desc:"채집량 +0.2배",gatherBonus:0.2} ],
+    전투:[ {id:"assault",  name:"돌격형", desc:"공격 시 버프 +5%p",atkBonus:0.05},
+           {id:"guard",    name:"수호형", desc:"수비 시 버프 +8%p",defBonus:0.08},
+           {id:"swift",    name:"기동형", desc:"부대 이동 1틱 단축(행군술과 중첩)",moveBonus:1},
+           {id:"vsmonster",name:"사냥꾼", desc:"몬스터 상대 버프 +10%p",vsMonsterBonus:0.10},
+           {id:"tough",    name:"인내형", desc:"부상 확률 -15%p",woundReduce:0.15} ],
+    내정:[ {id:"builder",name:"건축가", desc:"건설 속도 +1",buildBonus:1},
+           {id:"scholar",name:"학자",   desc:"연구 시작 시 소요 턴 −1",researchBonus:1},
+           {id:"trader", name:"상인",   desc:"채집량 +0.2배",gatherBonus:0.2},
+           {id:"overseer",name:"감독관", desc:"자원 건물 산출 +15%",econBonus:0.15},
+           {id:"quartermaster",name:"보급관",desc:"식량 유지비 -20%",upkeepReduce:0.20} ],
   };
   // heroTraits: h.traits(배열, 신규)와 h.trait(단일, 구버전 세이브 잔재) 둘 다 허용 — 실제 배열 전환은 applySave에서.
   const heroTraits=h=>{ if(!h) return []; const ids=h.traits||(h.trait?[h.trait]:[]);
@@ -440,7 +452,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
     factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
     pendingPromote:null,   // 영웅 승급 특성 선택 대기(C2)
-    dragon:{stage:0}, dragonScale:0,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음)
+    dragon:{stage:0,skills:[]}, dragonScale:0, pendingDragonSkill:null,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음)
     heroes:[{id:"H1",name:"재상 로한",type:"내정",grade:2,loc:"idle"},{id:"H2",name:"장군 카이",type:"전투",grade:2,loc:"idle"}],
     armies:[
       {id:"E1",side:"E",node:"E",mp:0,maxMp:0,name:"적 1군",comp:{중기병:8},hero:null,role:"home"},
@@ -478,7 +490,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const tierCap=g=>{const u=milestoneUnlocks(g); if(u.includes("tier5"))return 5; if(u.includes("tier4"))return 4; return 3;};   // 생산 건물이 오를 수 있는 실제 상한(마일스톤 해금 게이트)
   const aiCombatBuff=g=>0.06+0.03*(aiTierOf(g)-1);                                // AI 지휘관 정예화(영웅 대칭)
   const castleBaseIncome=g=>({식량:3+g.castle.level,목재:2+g.castle.level,석재:1+g.castle.level,철:g.castle.level+2});
-  function econIncome(g){const inc={식량:0,목재:0,석재:0,철:0},mult=hasR(g,"영농")?1.5:1;
+  function econIncome(g){const inc={식량:0,목재:0,석재:0,철:0}, ch=cityHero(g);
+    const mult=(hasR(g,"영농")?1.5:1)*(1+(ch?traitSum(ch,"econBonus"):0));   // 감독관 특성: 자원 건물 산출 추가
     for(const k in ECON_BUILDINGS){const b=ECON_BUILDINGS[k],n=g.castle.econ[k]||0;if(b.res&&n)inc[b.res]+=Math.round(b.amt*n*mult);}return inc;}
   function gatherOf(g,a){const n=NODES[a.node];if(a.side!=="P"||n.type!=="resource")return null;
     const hero=a.hero&&heroById(g,a.hero); const isCity=hero&&hero.type==="내정";
@@ -487,7 +500,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     return {res:n.res,amt:Math.round(base*mult)};}
   // 총 병력(주둔군 + 아군 부대) → 식량 유지비
   const totalTroops=g=>Object.values(g.castle.garrison).reduce((x,y)=>x+y,0)+g.armies.filter(a=>a.side==="P").reduce((x,a)=>x+troops(a),0);
-  const foodUpkeep=g=>Math.ceil(Math.max(0,totalTroops(g)-UPKEEP_FREE)*UPKEEP_RATE);
+  const foodUpkeep=g=>{const ch=cityHero(g), rate=UPKEEP_RATE*(1-(ch?traitSum(ch,"upkeepReduce"):0));   // 보급관 특성: 유지비 완화
+    return Math.ceil(Math.max(0,totalTroops(g)-UPKEEP_FREE)*rate);};
   function income(g){const inc={식량:0,목재:0,석재:0,철:0},base=castleBaseIncome(g),e=econIncome(g);
     for(const r of RES)inc[r]+=base[r]+e[r];
     for(const a of g.armies){const gt=gatherOf(g,a);if(gt)inc[gt.res]+=gt.amt;}
@@ -527,8 +541,11 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const aHero=hasCombatHero(g,attacker)?heroById(g,attacker.hero):null;
     const dHero=hasCombatHero(g,defender)?heroById(g,defender.hero):null;
     let aB=aHero?GRADE_BUFF[aHero.grade]+traitSum(aHero,"atkBonus"):0, dB=dHero?GRADE_BUFF[dHero.grade]+traitSum(dHero,"defBonus"):0;
-    const dragonBuff=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff;   // 드래곤(C1) — 영웅과 별개로 가산, 알 단계는 0이라 자동 무효
-    if(attacker.dragon) aB+=dragonBuff; if(defender.dragon) dB+=dragonBuff;
+    if(defender.side==="M") aB+=traitSum(aHero,"vsMonsterBonus");   // 사냥꾼 특성: 몬스터 상대 추가 버프
+    if(attacker.side==="M") dB+=traitSum(dHero,"vsMonsterBonus");
+    const dragonStageBuff=DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].buff;   // 드래곤(C1) — 영웅과 별개로 가산, 알 단계는 0이라 자동 무효
+    if(attacker.dragon){ aB+=dragonStageBuff+dragonSkillSum(g,"atkBonus"); if(defender.side==="M") aB+=dragonSkillSum(g,"vsMonsterBonus"); }
+    if(defender.dragon) dB+=dragonStageBuff+dragonSkillSum(g,"defBonus");
     let siegeUsed=false;
     if(fort){ let fortDef=(attacker.side==="P"&&hasR(g,"공성술"))?0.05:0.22;
       if(attacker.side==="P" && (g.castle.siegeItems||0)>0){ g.castle.siegeItems--; fortDef=Math.max(0,fortDef-0.10); siegeUsed=true; }   // 파성추(C3) 소모
@@ -544,13 +561,15 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const last=res.frames[res.frames.length-1];
     const rebuild=s=>{const c={};for(const x of last[s])if(x.alive>0)c[x.name]=(c[x.name]||0)+x.alive;return c;};
     const rA=rebuild("A"),rB=rebuild("B");
-    const wound=(army,before,after)=>{if(army.side!=="P")return 0;let t=0;for(const u in before){const lost=(before[u]||0)-(after[u]||0);if(lost>0){const w=Math.round(lost*WOUND_RATE);if(w>0){g.castle.wounded[u]=(g.castle.wounded[u]||0)+w;t+=w;}}}return t;};
+    const wound=(army,before,after,hero)=>{if(army.side!=="P")return 0;let t=0;
+      const wr=Math.max(0,WOUND_RATE-(hero?traitSum(hero,"woundReduce"):0));   // 인내형 특성: 부상률 완화
+      for(const u in before){const lost=(before[u]||0)-(after[u]||0);if(lost>0){const w=Math.round(lost*wr);if(w>0){g.castle.wounded[u]=(g.castle.wounded[u]||0)+w;t+=w;}}}return t;};
     const sum={attacker:attacker.name,defender:defender.name,aSide:attacker.side,fort:fort||ancientHold,w:res.w,survA:res.survA,survB:res.survB,siegeUsed,
       heroA:aHero?aHero.name:null,heroB:dHero?dHero.name:null,
       buffA:aHero?Math.round(aB*100):0, buffB:dHero?Math.round(dB*100):0,
       gradeA:aHero?aHero.grade:0, gradeB:dHero?dHero.grade:0,
       dragonA:!!attacker.dragon, dragonB:!!defender.dragon, dragonStage:DRAGON_STAGES[(g.dragon&&g.dragon.stage)||0].name};
-    if(res.w==="A"){ attacker.comp=rA; const wd=wound(attacker,beforeA,rA);
+    if(res.w==="A"){ attacker.comp=rA; const wd=wound(attacker,beforeA,rA,aHero);
       let rw=""; if(defender.side==="M"&&defender.reward){for(const r in defender.reward)g.res[r]=(g.res[r]||0)+defender.reward[r];rw=" · 보상 "+Object.entries(defender.reward).map(([r,v])=>`${r} +${v}`).join(", ");sum.reward=defender.reward;
         if(defender.mtier&&SUBDUE_REWARD[defender.mtier]){g.subdue=(g.subdue||0)+SUBDUE_REWARD[defender.mtier];sum.subdue=SUBDUE_REWARD[defender.mtier];rw+=` · 토벌점수 +${sum.subdue}`;}
         if(defender.mtier&&XP_REWARD[defender.mtier]){g.xpItems=(g.xpItems||0)+XP_REWARD[defender.mtier];sum.xp=XP_REWARD[defender.mtier];rw+=` · 경험치 +${sum.xp}`;}
@@ -562,8 +581,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
         }}
       sum.result=`${attacker.name} ${defender.side==="M"?"소탕 성공":"승리"} · ${defender.name} ${defender.side==="M"?"소멸":"전멸"}${rw}`+(wd?` · 부상 ${wd}`:"");
       removeArmy(g,defender); attacker.node=node; }
-    else if(res.w==="B"){ defender.comp=rB; const wd=wound(defender,beforeB,rB); sum.result=`${defender.name} 방어 · ${attacker.name} 전멸`+(wd?` · 부상 ${wd}`:""); removeArmy(g,attacker); }
-    else { attacker.comp=rA; defender.comp=rB; wound(attacker,beforeA,rA); wound(defender,beforeB,rB); sum.result="무승부 · 양측 생존"; }
+    else if(res.w==="B"){ defender.comp=rB; const wd=wound(defender,beforeB,rB,dHero); sum.result=`${defender.name} 방어 · ${attacker.name} 전멸`+(wd?` · 부상 ${wd}`:""); removeArmy(g,attacker); }
+    else { attacker.comp=rA; defender.comp=rB; wound(attacker,beforeA,rA,aHero); wound(defender,beforeB,rB,dHero); sum.result="무승부 · 양측 생존"; }
     return sum;
   }
   function defendCastle(g,attacker){
@@ -824,7 +843,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const events=[];
     for(const fs of g.factions){
       const f=FACTIONS.find(x=>x.id===fs.id); if(!f||g.turn<fs.next) continue;
-      const need=Math.round(f.base*(1+f.growth*(fs.count-1)));
+      const need=Math.round(f.base*(1+f.growth*(fs.count-1))*(1-dragonSkillSum(g,"factionReduce")));   // 위압의 포효(드래곤 스킬)
       const t=aiTierOf(g), comp={};
       for(let i=0;i<need;i++){ const u=f.units[Math.floor(Math.random()*f.units.length)], key=uk(u,t); comp[key]=(comp[key]||0)+1; }
       const node=randomTile(g)||"E";
@@ -900,13 +919,24 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
 
   // ---- 드래곤(C1) 단계 진행: 용린 누적에 따라 순차 성장(퀘스트/마일스톤과 같은 패턴) ----
   function dragonTick(g){
-    if(!g.dragon) g.dragon={stage:0};
+    if(!g.dragon) g.dragon={stage:0,skills:[]};
+    if(g.pendingDragonSkill) return [];   // 스킬 선택 대기 중엔 다음 단계로 안 넘어감(승급 특성 2択과 같은 흐름)
     const completed=[];
     while(g.dragon.stage<DRAGON_STAGES.length-1 && (g.dragonScale||0)>=DRAGON_STAGES[g.dragon.stage+1].need){
       g.dragon.stage++; completed.push(DRAGON_STAGES[g.dragon.stage]);
+      const have=new Set(g.dragon.skills||[]);
+      let cands=DRAGON_SKILLS.filter(s=>!have.has(s.id)); if(cands.length<2) cands=DRAGON_SKILLS;
+      const src=[...cands], picks=[];
+      while(picks.length<2 && src.length) picks.push(src.splice(Math.floor(Math.random()*src.length),1)[0]);
+      while(picks.length<2 && cands.length) picks.push(cands[Math.floor(Math.random()*cands.length)]);
+      g.pendingDragonSkill={options:picks.map(s=>s.id)};
+      break;   // 한 틱에 한 단계만 — 선택 확정 후 다음 tick에서 이어서 검사
     }
     return completed;
   }
+  function chooseDragonSkill(g,skillId){ const pp=g.pendingDragonSkill; if(!pp)return"대기 중인 선택 없음";
+    if(!pp.options.includes(skillId))return"잘못된 선택";
+    g.dragon.skills=g.dragon.skills||[]; g.dragon.skills.push(skillId); g.pendingDragonSkill=null; return null; }
 
   // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
   function endTurn(g){
@@ -955,7 +985,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
-    DRAGON_STAGES,dragonTick,assignDragon,dragonLoc,
+    DRAGON_STAGES,DRAGON_SKILLS,dragonTick,chooseDragonSkill,assignDragon,dragonLoc,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
@@ -1318,15 +1348,26 @@ function renderPanel(){
   h+=(function(){ const d=state.dragon||{stage:0}, st=Game.DRAGON_STAGES, cur=st[d.stage], next=st[d.stage+1];
     const loc=Game.dragonLoc(state), locTxt=loc==="idle"?"대기":(A(loc)?.name||"?")+" 배치";
     const pct=next?Math.min(100,Math.round(100*(state.dragonScale||0)/next.need)):100;
+    const skillNames=(d.skills||[]).map(id=>Game.DRAGON_SKILLS.find(x=>x.id===id)).filter(Boolean);
     let dh=`<hr><h3>🐉 드래곤</h3>
       <div class="hero"><b><span style="color:#c084fc">${cur.name}</span></b> <span class="k">(${locTxt})</span>
-        <div class="k" style="font-size:11px;color:#c084fc">${cur.buff>0?`✦ 전투 참여 시 부대 전투력 +${Math.round(cur.buff*100)}%`:cur.desc}</div>`;
+        <div class="k" style="font-size:11px;color:#c084fc">${cur.buff>0?`✦ 전투 참여 시 부대 전투력 +${Math.round(cur.buff*100)}%`:cur.desc}</div>
+        ${skillNames.length?`<div class="k" style="font-size:11px;color:#c084fc">${skillNames.map(sk=>`✦${sk.name}: ${sk.desc}`).join(" · ")}</div>`:""}`;
     if(next) dh+=`<div style="height:5px;background:var(--line);border-radius:3px;margin-top:5px"><div style="height:100%;width:${pct}%;background:#c084fc;border-radius:3px"></div></div>
         <div class="k" style="font-size:10px;margin-top:2px">다음 단계(${next.name}) — 용린 ${state.dragonScale||0}/${next.need}</div>`;
-    dh+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
-    if(s?.kind==="army"&&A(s.id).side==="P") dh+=`<button class="minibtn" data-dragonarmy="1">선택 부대에</button>`;
-    if(loc!=="idle") dh+=`<button class="minibtn" data-dragonidle="1">해제</button>`;
-    return dh+`</div></div>`; })();
+    if(state.pendingDragonSkill){
+      dh+=`<div style="background:var(--bg);border:1px solid #c084fc;border-radius:8px;padding:8px;margin-top:6px">
+        <div style="font-size:12px;color:#c084fc;margin-bottom:5px">${cur.name} 성장 — 스킬을 선택하세요</div>
+        ${state.pendingDragonSkill.options.map(sid=>{const sk=Game.DRAGON_SKILLS.find(x=>x.id===sid);
+          return sk?`<button class="minibtn" data-choosedragonskill="${sid}" style="display:block;width:100%;text-align:left;margin-bottom:4px">✦${sk.name}: ${sk.desc}</button>`:"";}).join("")}
+      </div>`;
+    } else {
+      dh+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
+      if(s?.kind==="army"&&A(s.id).side==="P") dh+=`<button class="minibtn" data-dragonarmy="1">선택 부대에</button>`;
+      if(loc!=="idle") dh+=`<button class="minibtn" data-dragonidle="1">해제</button>`;
+      dh+=`</div>`;
+    }
+    return dh+`</div>`; })();
   // 영웅 관리
   h+=`<hr><h3>🦸 영웅 <span class="k">· 경험치 아이템 ${state.xpItems||0}</span></h3>`;
   h+=`<div class="k" style="font-size:11px;margin-bottom:4px">몬스터 처치로 경험치 획득 → 영웅 승급(★↑)</div>`;
@@ -1369,6 +1410,7 @@ function renderPanel(){
   const cp=p.querySelector('[data-cancelpromote]'); if(cp) cp.onclick=()=>{Game.cancelPromote(state);render();};
   const da=p.querySelector('[data-dragonarmy]'); if(da) da.onclick=()=>{Game.assignDragon(state,state.selected.id);toast("🐉 드래곤 배치");render();};
   const di=p.querySelector('[data-dragonidle]'); if(di) di.onclick=()=>{Game.assignDragon(state,"idle");toast("🐉 드래곤 해제");render();};
+  p.querySelectorAll('[data-choosedragonskill]').forEach(b=>b.onclick=()=>{const m=Game.chooseDragonSkill(state,b.dataset.choosedragonskill); toast(m||"🐉 드래곤 스킬 습득!"); render();});
   const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
   p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
@@ -1555,7 +1597,8 @@ function applySave(data){
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
   state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
-  state.dragon=state.dragon||{stage:0}; state.dragonScale=state.dragonScale||0;   // 구버전 세이브 호환(C1)
+  state.dragon=state.dragon||{stage:0}; state.dragon.skills=state.dragon.skills||[]; state.dragonScale=state.dragonScale||0;   // 구버전 세이브 호환(C1)
+  state.pendingDragonSkill=state.pendingDragonSkill||null;
   (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
   document.getElementById('endturn').disabled=!!state.over; render();
 }

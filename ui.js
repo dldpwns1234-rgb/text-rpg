@@ -246,15 +246,26 @@ function renderPanel(){
   h+=(function(){ const d=state.dragon||{stage:0}, st=Game.DRAGON_STAGES, cur=st[d.stage], next=st[d.stage+1];
     const loc=Game.dragonLoc(state), locTxt=loc==="idle"?"대기":(A(loc)?.name||"?")+" 배치";
     const pct=next?Math.min(100,Math.round(100*(state.dragonScale||0)/next.need)):100;
+    const skillNames=(d.skills||[]).map(id=>Game.DRAGON_SKILLS.find(x=>x.id===id)).filter(Boolean);
     let dh=`<hr><h3>🐉 드래곤</h3>
       <div class="hero"><b><span style="color:#c084fc">${cur.name}</span></b> <span class="k">(${locTxt})</span>
-        <div class="k" style="font-size:11px;color:#c084fc">${cur.buff>0?`✦ 전투 참여 시 부대 전투력 +${Math.round(cur.buff*100)}%`:cur.desc}</div>`;
+        <div class="k" style="font-size:11px;color:#c084fc">${cur.buff>0?`✦ 전투 참여 시 부대 전투력 +${Math.round(cur.buff*100)}%`:cur.desc}</div>
+        ${skillNames.length?`<div class="k" style="font-size:11px;color:#c084fc">${skillNames.map(sk=>`✦${sk.name}: ${sk.desc}`).join(" · ")}</div>`:""}`;
     if(next) dh+=`<div style="height:5px;background:var(--line);border-radius:3px;margin-top:5px"><div style="height:100%;width:${pct}%;background:#c084fc;border-radius:3px"></div></div>
         <div class="k" style="font-size:10px;margin-top:2px">다음 단계(${next.name}) — 용린 ${state.dragonScale||0}/${next.need}</div>`;
-    dh+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
-    if(s?.kind==="army"&&A(s.id).side==="P") dh+=`<button class="minibtn" data-dragonarmy="1">선택 부대에</button>`;
-    if(loc!=="idle") dh+=`<button class="minibtn" data-dragonidle="1">해제</button>`;
-    return dh+`</div></div>`; })();
+    if(state.pendingDragonSkill){
+      dh+=`<div style="background:var(--bg);border:1px solid #c084fc;border-radius:8px;padding:8px;margin-top:6px">
+        <div style="font-size:12px;color:#c084fc;margin-bottom:5px">${cur.name} 성장 — 스킬을 선택하세요</div>
+        ${state.pendingDragonSkill.options.map(sid=>{const sk=Game.DRAGON_SKILLS.find(x=>x.id===sid);
+          return sk?`<button class="minibtn" data-choosedragonskill="${sid}" style="display:block;width:100%;text-align:left;margin-bottom:4px">✦${sk.name}: ${sk.desc}</button>`:"";}).join("")}
+      </div>`;
+    } else {
+      dh+=`<div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">`;
+      if(s?.kind==="army"&&A(s.id).side==="P") dh+=`<button class="minibtn" data-dragonarmy="1">선택 부대에</button>`;
+      if(loc!=="idle") dh+=`<button class="minibtn" data-dragonidle="1">해제</button>`;
+      dh+=`</div>`;
+    }
+    return dh+`</div>`; })();
   // 영웅 관리
   h+=`<hr><h3>🦸 영웅 <span class="k">· 경험치 아이템 ${state.xpItems||0}</span></h3>`;
   h+=`<div class="k" style="font-size:11px;margin-bottom:4px">몬스터 처치로 경험치 획득 → 영웅 승급(★↑)</div>`;
@@ -297,6 +308,7 @@ function renderPanel(){
   const cp=p.querySelector('[data-cancelpromote]'); if(cp) cp.onclick=()=>{Game.cancelPromote(state);render();};
   const da=p.querySelector('[data-dragonarmy]'); if(da) da.onclick=()=>{Game.assignDragon(state,state.selected.id);toast("🐉 드래곤 배치");render();};
   const di=p.querySelector('[data-dragonidle]'); if(di) di.onclick=()=>{Game.assignDragon(state,"idle");toast("🐉 드래곤 해제");render();};
+  p.querySelectorAll('[data-choosedragonskill]').forEach(b=>b.onclick=()=>{const m=Game.chooseDragonSkill(state,b.dataset.choosedragonskill); toast(m||"🐉 드래곤 스킬 습득!"); render();});
   const lu=p.querySelector('#levelup'); if(lu) lu.onclick=levelUp;
   p.querySelectorAll('[data-hcastle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hcastle,"castle"));
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
@@ -483,7 +495,8 @@ function applySave(data){
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
   state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)
-  state.dragon=state.dragon||{stage:0}; state.dragonScale=state.dragonScale||0;   // 구버전 세이브 호환(C1)
+  state.dragon=state.dragon||{stage:0}; state.dragon.skills=state.dragon.skills||[]; state.dragonScale=state.dragonScale||0;   // 구버전 세이브 호환(C1)
+  state.pendingDragonSkill=state.pendingDragonSkill||null;
   (state.heroes||[]).forEach(h=>{ if(h.trait&&!h.traits) h.traits=[h.trait]; delete h.trait; if(!h.traits) h.traits=[]; });   // hero.trait(단일)→traits(배열) 1회 이관(C2)
   document.getElementById('endturn').disabled=!!state.over; render();
 }
