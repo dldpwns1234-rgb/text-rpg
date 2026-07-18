@@ -110,5 +110,16 @@ Milestone A·B(B1·B2·B4) 완료 후 게임 전체 완성도를 리뷰해 5개 
 
 **검증**: `node verify.js` 12 PASS, `node sim.js`(습격대 3종 22회/400턴, 함락 4.27회 · 레이드패 12.6회로 상승 — 레이드패는 페널티 없는 카운터라 문제 아니고, ANCIENT가 보스 재등장 전 24턴간 상시 경합 오브젝트가 되는 자연스러운 현상. 자원 회복 패턴은 여전히 유지), 브라우저에서 특성 표시·티어 게이팅 문구·습격 세력 정보·prey 타겟팅(야외 부대 있을 때 그쪽으로 진군) 확인.
 
+## 모바일 UX/UI 개선 (2026-07-18)
+
+375px 실기기 뷰포트로 직접 열어 문제를 실측: 맵이 가로 스크롤 필요(672~780px 고정폭) + 패널이 맵 아래(세로 스크롤도 필요) → **두 방향 스크롤**이 동시에 필요해 방향감각을 잃는 게 핵심 문제. 2단계로 개선(전부 CSS 미디어쿼리·JS 로직으로만, 데스크톱은 무변화):
+
+- **정보 아코디언**: 퀘스트·마일스톤·시즌·세력정보 4개 박스를 `renderInfoAccordion()` 하나로 묶어 접고 펼침(기본 펼침, `state.infoOpen`).
+- **☰ 메뉴**: 저장/불러오기/내보내기/가져오기/새게임 5버튼을 모바일에서만 드롭다운 뒤로 숨김(`#menuDrop`+`#menuBtn`, `.menu-drop`이 데스크톱 기본은 `display:flex`라 무변화, 820px 이하에서만 `position:absolute`+숨김 토글).
+- **지도 드래그 팬**: `.mapbox{height:52vh;overflow:hidden;touch-action:none}` + JS로 `svg`에 `transform:translate()` 적용, pointerdown/move/up(+마우스 폴백)으로 드래그, 경계 clamp. **함정**: `svg.offsetWidth`는 SVG 루트 엘리먼트에서 `undefined`(HTMLElement 전용 속성이라 SVGElement엔 없음) → `getBoundingClientRect().width`로 교체해야 함. 드래그 후 릴리스 시 바로 아래 노드가 클릭되지 않도록 캡처 단계에서 다음 클릭 1회를 삼킴.
+- **패널 → 바텀시트**: `.panel{position:fixed;bottom:0;max-height:18vh(접힘)/78vh(펼침)}`, `#sheetHandle` 탭이나 부대/성 선택 시(`openSheet()`) 자동으로 펼쳐짐, 지도 배경 탭이나 손잡이 재탭으로 접힘(`closeSheet()`). 템플릿에 `#panel > #sheetHandle + #panelBody` 구조 추가, `renderPanel()`의 렌더 타깃을 `#panel`→`#panelBody`로 변경.
+
+**검증**: 375×812 뷰포트에서 CSS 계산값(52vh/18vh/78vh) 확인, `PointerEvent` 직접 디스패치로 팬·클램프·리셋 동작 확인, `sheetHandle`/`menuBtn` 프로그래매틱 클릭으로 토글 확인, 1280px 데스크톱에서 기존 사이드바이사이드 레이아웃 무변화 확인. (참고: 이 세션의 브라우저 자동화 `left_click_drag`는 중간 move 이벤트를 안 쏘는 것으로 보여 실제 드래그 제스처 자동화 검증엔 한계가 있었음 — 실기기 확인 필요.)
+
 ## 지금 다음 액션
-Milestone A·B(B1·B2·B4) + 완성도 개선 4종 완료(2026-07-18). B3(안개·탐험)는 여전히 보류. 다음은 **모바일 UX/UI 개선 방향**을 논의 중 — 결정되면 별도 작업으로 진행. 이후 **Milestone C**(드래곤·병종 확장 등 남은 큰 항목) 상세화 예정.
+Milestone A·B(B1·B2·B4) + 완성도 개선 4종 + 모바일 UX 2단계 완료(2026-07-18). B3(안개·탐험)는 여전히 보류. 다음은 **Milestone C**(드래곤·영웅 스킬트리·병종 확장 등 남은 큰 항목) 상세화 예정 — 사용자 확인 후 착수.

@@ -11,7 +11,7 @@
   body{margin:0;background:var(--bg);color:var(--txt);
     font-family:-apple-system,"Malgun Gothic",system-ui,sans-serif;padding:12px;line-height:1.4;font-size:14px;}
   h1{font-size:18px;margin:0 0 8px;}
-  .top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
+  .top{position:relative;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
     border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px;}
   .res{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);
     border-radius:8px;padding:4px 9px;font-variant-numeric:tabular-nums;}
@@ -21,19 +21,33 @@
   button:hover:not(:disabled){background:var(--line);}
   button:disabled{opacity:.4;cursor:default;}
   #endturn{background:var(--green);color:#04240f;border:none;}
+  #menuBtn{display:none;}                    /* 데스크톱: ☰ 안 씀, 아래 5버튼 항상 인라인 */
+  .menu-drop{display:flex;gap:8px;}
   .wrap{display:grid;grid-template-columns:1fr 300px;gap:10px;}
   .mapbox{background:#0b1220;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
   svg{display:block;width:100%;height:auto;}
   button,.minibtn{touch-action:manipulation;-webkit-tap-highlight-color:rgba(245,158,11,.25);}  /* 탭 300ms 지연 제거 */
-  @media(max-width:820px){          /* 모바일: 지도 확대(가로 스크롤) + 버튼/입력 확대 */
+  .sheet-handle{display:none;}                /* 데스크톱: 바텀시트 손잡이 숨김(패널이 항상 옆에 펼쳐져 있음) */
+  @media(max-width:820px){          /* 모바일: 지도는 드래그 팬 + 고정 높이, 패널은 바텀시트 */
     .wrap{grid-template-columns:1fr;}
-    .mapbox{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;}
-    svg{width:780px;max-width:none;}
+    .mapbox{height:52vh;overflow:hidden;touch-action:none;}   /* 네이티브 스크롤 대신 JS 드래그 팬 */
+    svg{width:780px;max-width:none;transform-origin:0 0;}
     .minibtn{font-size:13px;padding:8px 11px;}
     button{min-height:42px;}
     .prodrow{padding:7px 0;}
     select,input[type=number]{min-height:38px;font-size:14px;padding:5px;}
     .res{padding:6px 10px;}
+    #menuBtn{display:inline-block;}
+    .menu-drop{position:absolute;top:100%;right:12px;margin-top:4px;background:var(--card);
+      border:1px solid var(--line);border-radius:10px;padding:8px;flex-direction:column;z-index:16;
+      box-shadow:0 6px 16px rgba(0,0,0,.4);}
+    .menu-drop.hidden{display:none;}
+    .sheet-handle{display:flex;justify-content:center;align-items:center;gap:6px;margin:-12px -12px 8px;
+      padding:8px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);cursor:pointer;}
+    .panel{position:fixed;left:0;right:0;bottom:0;max-height:18vh;overflow-y:auto;
+      border-radius:14px 14px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,.45);z-index:15;
+      transition:max-height .25s ease;}
+    .panel.sheetOpen{max-height:78vh;}
   }
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:13px;}
   .panel h3{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between;}
@@ -70,18 +84,24 @@
   <span id="resbar" style="display:flex;gap:6px;flex-wrap:wrap"></span>
   <span id="moveConfirm"></span>
   <span style="flex:1"></span>
-  <button id="saveBtn" title="현재 판 저장(브라우저)">💾</button>
-  <button id="loadBtn" title="저장된 판 불러오기">📂</button>
-  <button id="exportBtn" title="세이브 파일로 내보내기">⬇</button>
-  <button id="importBtn" title="세이브 파일 가져오기">⬆</button>
-  <input type="file" id="importFile" accept=".json,application/json" style="display:none">
-  <button id="newBtn" title="새 게임">🆕</button>
+  <div id="menuDrop" class="menu-drop hidden">
+    <button id="saveBtn" title="현재 판 저장(브라우저)">💾</button>
+    <button id="loadBtn" title="저장된 판 불러오기">📂</button>
+    <button id="exportBtn" title="세이브 파일로 내보내기">⬇</button>
+    <button id="importBtn" title="세이브 파일 가져오기">⬆</button>
+    <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+    <button id="newBtn" title="새 게임">🆕</button>
+  </div>
+  <button id="menuBtn" title="메뉴(저장·불러오기 등)">☰</button>
   <button id="castleBtn">🏰 성 내정</button>
   <button id="endturn">⏭ 턴 종료</button>
 </div>
 <div class="wrap">
   <div class="mapbox"><svg id="map" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet"></svg></div>
-  <div id="panel" class="panel"></div>
+  <div id="panel" class="panel">
+    <div class="sheet-handle" id="sheetHandle">▲ 정보·부대 패널 (탭해서 펼치기/접기)</div>
+    <div id="panelBody"></div>
+  </div>
 </div>
 <div class="k" style="font-size:12px;margin-top:8px">채집·생산으로 국력을 키우는 <b>지속형 왕국</b>. 적 성 함락·고대성 레이드는 게임오버가 아니라 보상+마일스톤으로 이어지는 사건 — 왕국은 계속 성장합니다. 부대가 적과 만나면 전투 엔진으로 교전하고, 성 수비는 성벽 보정을 받습니다.</div>
 <div class="toast" id="toast"></div>

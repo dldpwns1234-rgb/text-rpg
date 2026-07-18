@@ -54,9 +54,21 @@ function renderQuests(){
     ${rw?`<div style="font-size:11px;color:var(--green);margin-top:3px">✦ 보상 ${rw}</div>`:""}
   </div>`;
 }
+// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/시즌/세력정보를 한 덩어리로 접고 펼침. 기본은 펼침(온보딩 가시성 유지).
+function renderInfoAccordion(){
+  const body=renderQuests()+renderMilestone()+renderSeason()+renderFactionInfo();
+  if(!body) return "";
+  const open=state.infoOpen!==false;
+  return `<div style="margin-bottom:4px">
+    <div id="infoToggle" style="cursor:pointer;font-size:12px;color:var(--gold);display:flex;justify-content:space-between;align-items:center;padding:2px 0 6px">
+      <span>📋 현황 (목표·마일스톤·위협)</span><span>${open?"▲":"▼"}</span>
+    </div>
+    ${open?body:""}
+  </div>`;
+}
 function renderPanel(){
-  const p=document.getElementById('panel'); const s=state.selected;
-  let h=renderQuests()+renderMilestone()+renderSeason()+renderFactionInfo();
+  const p=document.getElementById('panelBody'); const s=state.selected;
+  let h=renderInfoAccordion();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
     const tab=state.castleTab||"건물"; const busy=!!c.build;
@@ -244,6 +256,7 @@ function renderPanel(){
   }
   p.innerHTML=h;
   // 핸들러
+  const infoT=p.querySelector('#infoToggle'); if(infoT) infoT.onclick=()=>{state.infoOpen=!(state.infoOpen!==false);render();};
   p.querySelectorAll('[data-bld]').forEach(b=>b.onclick=()=>{state.castle.openBuilding=b.dataset.bld;render();});
   p.querySelectorAll('[data-construct]').forEach(b=>b.onclick=()=>construct(b.dataset.construct));
   p.querySelectorAll('select[id^="tier_"]').forEach(s=>s.onchange=()=>{state.prodTier[s.id.slice(5)]=+s.value;});
@@ -282,13 +295,13 @@ function attach(){
       const {dist}=dijkstra(sel.node,99);
       if(dist[a.node]!==undefined){ stageMove(a.node); return; }
     }
-    state.pendingMove=null; state.selected={kind:"army",id:a.id}; render();});
+    state.pendingMove=null; state.selected={kind:"army",id:a.id}; openSheet(); render();});
   svg.querySelectorAll('[data-go]').forEach(c=>c.onclick=e=>{e.stopPropagation();stageMove(c.dataset.go);});
   svg.querySelectorAll('[data-node]').forEach(c=>c.onclick=e=>{e.stopPropagation();
     const sel=state.selected?.kind==="army"?A(state.selected.id):null;
     if(sel && sel.side==="P"){ const {dist}=dijkstra(sel.node,99);
       if(dist[c.dataset.node]!==undefined && c.dataset.node!==sel.node){ stageMove(c.dataset.node); return; } }
-    state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node};render();});
+    state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node}; openSheet(); render();});
 }
 function stageMove(target){ // 1단계: 목적지 미리보기 (확정 전엔 명령 안 내림)
   if(state.over) return;
@@ -393,14 +406,17 @@ function showWorldEventModal(ev){
 }
 
 /* ===== 저장/불러오기 ===== */
-const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier"];
+const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier","infoOpen"];
 function saveSnapshot(){const o={...state,ancientOwner:NODES.ANCIENT.owner,savedAt:Date.now()};for(const f of UI_FIELDS)delete o[f];return JSON.parse(JSON.stringify(o));}
 function applySave(data){
   if(typeof rtStop==="function")rtStop();   // 로드/새게임 시 실시간 루프 정지
   hideModal();                              // 열려있던 전투/종료 모달 닫기
+  if(typeof resetMapPan==="function")resetMapPan();   // 새 판/불러오기 시 지도 팬 위치 초기화
+  closeSheet();
   for(const k in state){if(!UI_FIELDS.includes(k))delete state[k];}
   Object.assign(state,data); NODES.ANCIENT.owner=data.ancientOwner!==undefined?data.ancientOwner:null; delete state.ancientOwner;
   state.selected=null;state.pendingMove=null;state.mode="normal"; state.castleTab=state.castleTab||"건물"; state.prodTier=state.prodTier||{};
+  state.infoOpen=state.infoOpen!==false;
   state.quests=state.quests||{done:[],idx:0};   // 구버전 세이브 호환
   state.milestones=state.milestones||{done:[],idx:0,unlocked:[]};   // 구버전 세이브 호환(A2)
   state.raidBossGen=state.raidBossGen||0;
@@ -441,6 +457,12 @@ document.getElementById('exportBtn').onclick=exportFile;
 document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
 document.getElementById('importFile').onchange=e=>{if(e.target.files[0])importFile(e.target.files[0]);e.target.value="";};
 document.getElementById('newBtn').onclick=newGameReset;
+// ☰ 메뉴(모바일) — 저장/불러오기 등 5개 버튼을 드롭다운으로. 데스크톱 CSS는 이 클래스를 무시(항상 인라인).
+(function(){ const mb=document.getElementById('menuBtn'), md=document.getElementById('menuDrop'); if(!mb||!md)return;
+  mb.onclick=e=>{e.stopPropagation();md.classList.toggle('hidden');};
+  md.addEventListener('click',e=>{ if(e.target.tagName==='BUTTON') md.classList.add('hidden'); });
+  document.addEventListener('click',e=>{ if(!md.contains(e.target)&&e.target!==mb) md.classList.add('hidden'); });
+})();
 
 /* ===== 턴 / 실시간 루프 (일시정지 가능) ===== */
 // 한 틱 = endTurn + 렌더 + 저장 + 사건 처리. 수동 버튼과 실시간 루프가 공유(단일 소스).
@@ -485,7 +507,37 @@ function rtSync(){ const pb=document.getElementById('rtPlay'); if(!pb)return;
   w.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>rtSetSpeed(+b.dataset.spd));
 })();
 document.getElementById('endturn').onclick=stepTurn;
-document.getElementById('castleBtn').onclick=()=>{state.pendingMove=null;state.selected={kind:"node",id:"P"};render();};
-svg.addEventListener('click',()=>{state.selected=null;state.pendingMove=null;state.mode="normal";render();});
+document.getElementById('castleBtn').onclick=()=>{state.pendingMove=null;state.selected={kind:"node",id:"P"};openSheet();render();};
+svg.addEventListener('click',()=>{state.selected=null;state.pendingMove=null;state.mode="normal";closeSheet();render();});
+// ---- 바텀시트(모바일) — 부대/성 선택 시 자동으로 펼침, 지도 배경 탭·손잡이 탭으로 접음. 데스크톱은 CSS가 무시(항상 펼침 레이아웃).
+function openSheet(){ document.getElementById('panel')?.classList.add('sheetOpen'); }
+function closeSheet(){ document.getElementById('panel')?.classList.remove('sheetOpen'); }
+(function(){ const h=document.getElementById('sheetHandle'); if(!h) return;
+  h.onclick=()=>document.getElementById('panel').classList.toggle('sheetOpen');
+})();
+// ---- 지도 드래그 팬(모바일) — .mapbox가 svg보다 작을 때만 의미 있음(데스크톱은 콘텐츠가 꽉 차 사실상 무동작).
+let resetMapPan=()=>{};
+(function(){ const box=svg.parentElement; if(!box) return;
+  let pan={x:0,y:0}, drag=null;
+  const apply=()=>{svg.style.transform=`translate(${pan.x}px,${pan.y}px)`;};
+  const clamp=()=>{ const bw=box.clientWidth,bh=box.clientHeight, r=svg.getBoundingClientRect(), sw=r.width||bw, sh=r.height||bh;
+    const minX=Math.min(0,bw-sw), minY=Math.min(0,bh-sh);
+    pan.x=Math.max(minX,Math.min(0,pan.x)); pan.y=Math.max(minY,Math.min(0,pan.y)); };
+  resetMapPan=()=>{ pan={x:0,y:0}; apply(); };
+  const startDrag=(id,x,y)=>{ drag={id,x,y,ox:pan.x,oy:pan.y,moved:false}; };
+  const moveDrag=(id,x,y)=>{ if(!drag||drag.id!==id) return;
+    const dx=x-drag.x, dy=y-drag.y;
+    if(Math.abs(dx)>4||Math.abs(dy)>4) drag.moved=true;
+    pan.x=drag.ox+dx; pan.y=drag.oy+dy; clamp(); apply(); };
+  const endDrag=id=>{ if(drag&&drag.id===id&&drag.moved){ const swallow=ev=>{ev.stopPropagation();ev.preventDefault();box.removeEventListener('click',swallow,true);};
+    box.addEventListener('click',swallow,true); } if(!drag||drag.id===id) drag=null; };
+  // 포인터 이벤트(실제 터치·마우스 — 대부분의 브라우저가 여기로 통합) + 레거시 마우스 이벤트(구형/일부 자동화 환경 폴백).
+  box.addEventListener('pointerdown',e=>{ startDrag('p',e.clientX,e.clientY); try{box.setPointerCapture(e.pointerId);}catch(err){} });
+  box.addEventListener('pointermove',e=>moveDrag('p',e.clientX,e.clientY));
+  box.addEventListener('pointerup',()=>endDrag('p')); box.addEventListener('pointercancel',()=>endDrag('p'));
+  box.addEventListener('mousedown',e=>{ if(!drag) startDrag('m',e.clientX,e.clientY); });
+  window.addEventListener('mousemove',e=>{ if(drag&&drag.id==='m') moveDrag('m',e.clientX,e.clientY); });
+  window.addEventListener('mouseup',()=>{ if(drag&&drag.id==='m') endDrag('m'); });
+})();
 render(); rtSync();
 try{ if(localStorage.getItem(SAVE_KEY)) toast("이전 저장 있음 — 📂 눌러 이어하기 · ▶ 재생으로 시간 시작"); }catch(e){}
