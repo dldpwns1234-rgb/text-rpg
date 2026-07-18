@@ -1310,9 +1310,10 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   }
   function offlineTick(g,ticks){ ticks=Math.max(0,Math.min(ticks|0,OFFLINE_MAX_TICKS));
     const rep={hunts:0,huntRewards:{},skirmishes:0,skirmishWins:0,skirmishLosses:0,lostArmies:0,built:[],research:[]};
-    const res0={...g.res}, might0=computeMight(g), t0=g.turn;
+    const res0={...g.res}, might0=computeMight(g), t0=g.turn, rank0=myRank(g);
     for(let i=0;i<ticks;i++) offlineStep(g,rep);
     rep.ticks=ticks; rep.turns=g.turn-t0; rep.mightGain=computeMight(g)-might0;
+    rep.rankBefore=rank0; rep.rankAfter=myRank(g);   // I5: 방치 사이 대륙 순위 변동
     rep.resGain={}; for(const r of RES){ const d=Math.round(g.res[r]-res0[r]); if(d)rep.resGain[r]=d; }
     return rep; }
 
@@ -2106,6 +2107,8 @@ function offlineCatchup(data){
   if(r.skirmishes) h+=`<div class="res-line" style="color:${r.lostArmies?'var(--red)':'var(--blue)'}">🛡 견제 전투 ${r.skirmishes}회 · 방어 성공 ${r.skirmishWins}${r.lostArmies?` · 부대 손실 ${r.lostArmies} ⚠`:""}</div>`;
   if(r.built&&r.built.length) h+=`<div class="res-line">🏗 건설 완료 — ${r.built.join(", ")}</div>`;
   if(r.research&&r.research.length) h+=`<div class="res-line">🔬 연구 완료 — ${r.research.join(", ")}</div>`;
+  if(r.seasonEnds) h+=`<div class="res-line" style="color:#c084fc">🏆 경쟁 시즌 ${r.seasonEnds}회 마감${r.lastTier?` — 최근 ${r.lastTier}`:""}</div>`;
+  if(r.rankBefore&&r.rankAfter&&r.rankBefore!==r.rankAfter) h+=`<div class="res-line" style="color:${r.rankAfter<r.rankBefore?'var(--gold)':'#fca5a5'}">🏆 대륙 순위 #${r.rankBefore} → #${r.rankAfter}${r.rankAfter>r.rankBefore?" (추월당함!)":" ↑"}</div>`;
   h+=`<div class="res-line k">국력 ${r.mightGain>=0?"+":""}${r.mightGain}</div>`;
   showModal(`<h2>🌙 자리를 비운 사이…</h2>${h}<button class="minibtn" id="modalClose">확인</button>`);
 }

@@ -1054,9 +1054,10 @@
   }
   function offlineTick(g,ticks){ ticks=Math.max(0,Math.min(ticks|0,OFFLINE_MAX_TICKS));
     const rep={hunts:0,huntRewards:{},skirmishes:0,skirmishWins:0,skirmishLosses:0,lostArmies:0,built:[],research:[]};
-    const res0={...g.res}, might0=computeMight(g), t0=g.turn;
+    const res0={...g.res}, might0=computeMight(g), t0=g.turn, rank0=myRank(g);
     for(let i=0;i<ticks;i++) offlineStep(g,rep);
     rep.ticks=ticks; rep.turns=g.turn-t0; rep.mightGain=computeMight(g)-might0;
+    rep.rankBefore=rank0; rep.rankAfter=myRank(g);   // I5: 방치 사이 대륙 순위 변동
     rep.resGain={}; for(const r of RES){ const d=Math.round(g.res[r]-res0[r]); if(d)rep.resGain[r]=d; }
     return rep; }
 
