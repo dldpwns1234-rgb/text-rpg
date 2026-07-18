@@ -15,6 +15,7 @@ function renderResBar(){
     +`<span class="res" style="border-color:#c4b5fd;color:#c4b5fd">🏵 토벌 <b>${state.subdue||0}</b></span>`
     +`<span class="res" style="border-color:#fbbf24;color:#fbbf24">📜 경험치 <b>${state.xpItems||0}</b></span>`
     +`<span class="res" style="border-color:var(--blue);color:var(--blue)">⚔ 국력 <b>${Game.computeMight(state)}</b> <span class="k">(적 ${Game.enemyMight(state)})</span></span>`
+    +(Game.myRank?`<span class="res" style="border-color:var(--gold);color:var(--gold)">🏆 대륙 <b>#${Game.myRank(state)}</b><span class="k">/${(state.rivals?state.rivals.length:0)+1}</span></span>`:"")
     +`<span class="res" style="border-color:#c084fc;color:#c084fc">🐉 용린 <b>${state.dragonScale||0}</b></span>`;
   document.getElementById('turn').textContent=state.turn;
 }
@@ -62,9 +63,27 @@ function renderQuests(){
     ${rw?`<div style="font-size:11px;color:var(--green);margin-top:3px">✦ 보상 ${rw}</div>`:""}
   </div>`;
 }
-// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/시즌/세력정보를 한 덩어리로 접고 펼침. 기본은 펼침(온보딩 가시성 유지).
+// 🏆 대륙 랭킹(I1) — 내 국력 vs 라이벌 왕국. 방치하면 추월당하고 꺾으면 순위↑.
+function renderRankings(){
+  if(!Game.continentalRankings) return "";
+  const list=Game.continentalRankings(state), max=Math.max(1,...list.map(x=>x.might));
+  const rows=list.map((x,i)=>{
+    const w=Math.round(100*x.might/max), col=x.me?"var(--gold)":"#94a3b8";
+    return `<div style="display:flex;align-items:center;gap:6px;margin:2px 0">
+      <span style="width:16px;text-align:right;color:${col};font-size:11px">${i+1}</span>
+      <span style="flex:1;min-width:0">
+        <span style="font-size:11px;color:${col}">${x.me?"👑 ":""}${x.name}${x.bias?` <span class="k">·${x.bias}</span>`:""} <b>${x.might}</b></span>
+        <div style="height:4px;background:var(--line);border-radius:2px;margin-top:1px"><div style="height:100%;width:${w}%;background:${x.me?'var(--gold)':'#475569'};border-radius:2px"></div></div>
+      </span></div>`;
+  }).join("");
+  return `<div style="background:var(--bg);border:1px solid var(--gold);border-radius:10px;padding:8px 10px;margin-bottom:10px">
+    <div style="font-size:11px;color:var(--gold);margin-bottom:4px">🏆 대륙 랭킹 <span class="k">— 국력으로 겨루는 왕국들</span></div>
+    ${rows}
+  </div>`;
+}
+// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/랭킹/시즌/세력정보를 한 덩어리로 접고 펼침. 기본은 펼침(온보딩 가시성 유지).
 function renderInfoAccordion(){
-  const body=renderQuests()+renderMilestone()+renderSeason()+renderFactionInfo();
+  const body=renderQuests()+renderMilestone()+renderRankings()+renderSeason()+renderFactionInfo();
   if(!body) return "";
   const open=state.infoOpen!==false;
   return `<div style="margin-bottom:4px">
@@ -582,6 +601,7 @@ function applySave(data){
   state.raidBossGen=state.raidBossGen||0;
   if(state.raid) state.raid.settled=state.raid.settled||false;   // 구버전 세이브 호환 — 고대성 점거 1회 발동 플래그
   state.ai=state.ai||{budget:0}; if(state.ai.lastWave==null)state.ai.lastWave=-99;   // 구버전 세이브 호환 — 웨이브 간격 추적
+  state.rivals=state.rivals||Game.RIVALS.map(r=>({id:r.id,might:r.base})); state.rivalKills=state.rivalKills||0;   // 구버전 세이브 호환 — 라이벌 왕국(I1)
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)
   state.factions=state.factions||Game.FACTIONS.map(f=>({id:f.id,count:1,next:state.turn+f.interval}));   // 구버전 세이브 호환(B1)
   state.pendingPromote=state.pendingPromote||null;   // 구버전 세이브 호환(C2)

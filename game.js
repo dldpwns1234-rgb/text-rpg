@@ -166,6 +166,16 @@
     // 채집·원정 나간 부대를 방치하면 위험하다는 새로운 판단(호위/철수)을 만듦.
     {id:"nightraid",name:"야습대",   units:["장궁병","석궁병"],interval:80,base:10,growth:0.2,prey:true},
   ];
+  // 라이벌 왕국(I1, 끝없는 경쟁): 풀 맵 도시 없이 "국력이 자라는 추상 세력". side는 여전히 "E"(웨이브에 정체성 라벨만 얹음).
+  // 각 라이벌은 플레이어 국력의 배수(factor)를 목표로 서서히 수렴 → 항상 경쟁권 유지(오프라인 폭주 없음). factor>1은 방치 시 추월.
+  // 라이벌 원정대를 꺾으면 might가 깎여 순위↑(damageRival, I2), 방치하면 다시 목표로 회복.
+  const RIVALS=[
+    {id:"ironclad",  name:"강철왕 발트",   bias:"보병", factor:0.85, base:80},
+    {id:"emberhold", name:"화염군주 카산", bias:"기병", factor:1.25, base:120},
+    {id:"veilspire", name:"안개탑 셀레네", bias:"궁병", factor:0.70, base:60},
+    {id:"frostqueen",name:"서리여왕 리안", bias:"혼합", factor:1.05, base:100},
+  ];
+  let threatMul=g=>1;   // 위협 등반 계수(I4에서 시즌 회차·랭크 기반으로 확장). I1~I3에선 1(무영향).
 
   const RESEARCH={
     "축성술":{cat:"전투",sub:"공성·수성",req:[],cost:{목재:15,철:15},turns:2,desc:"내 성 수비 +15%"},
@@ -281,6 +291,7 @@
     raidBossGen:0,   // 월드 보스(레이드) 재등장 세대(B4) — 재등장할 때마다 +1, 그만큼 강화
     season:{count:1,next:SEASON_INTERVAL,warnAt:SEASON_INTERVAL-SEASON_WARN_LEAD,warned:false},   // 시즌형 침공(B2)
     factions:FACTIONS.map(f=>({id:f.id,count:1,next:f.interval})),   // 다수 세력(B1)
+    rivals:RIVALS.map(r=>({id:r.id,might:r.base})), rivalKills:0,   // 라이벌 왕국(I1) — 국력이 자라는 경쟁 세력, 격파 누적
     pendingPromote:null,   // 영웅 승급 특성 선택 대기(C2)
     dragon:{stage:0,skills:[],skillPoints:0,scaleSpent:0}, dragonScale:0,   // 드래곤(C1) — 게임 시작부터 알 보유(별도 획득 이벤트 없음). F3: 스킬은 req 트리+skillPoints로 획득(2択 폐기)
     lord:{level:1,xp:0,talentPoints:0,talents:{},equipment:{}}, lordInventory:[], materials:0, blueprints:0,   // 군주(F4) — 몬스터 처치로 성장, 재능 트리+장비
@@ -359,6 +370,17 @@
   }
   // 적 위협 대략치(비교용 표시): P와 동일 스케일은 아님, 병력 규모 기준 단순 지표
   const enemyMight=g=>{let t=0;for(const a of g.armies)if(a.side==="E")t+=troops(a);return Math.round(t*1.2);};
+
+  // ---- 대륙 랭킹(I1): 플레이어 국력 vs 라이벌 국력 정렬 → 순위 ----
+  function rivalTick(g){ if(!g.rivals) return; const pm=computeMight(g), tm=threatMul(g);
+    for(const r of g.rivals){ const t=RIVALS.find(x=>x.id===r.id); if(!t)continue;
+      const target=Math.max(t.base, pm*t.factor)*tm;   // 플레이어 국력의 배수를 목표로 수렴 → 항상 경쟁권(오프라인 폭주 없음)
+      r.might+=(target-r.might)*0.02;   // 느린 접근(반감기 ~35틱): 격파로 깎이면 서서히 회복, 방치 시 목표까지 성장
+    } }
+  function continentalRankings(g){ const list=[{name:"내 왕국",might:computeMight(g),me:true}];
+    if(g.rivals) for(const r of g.rivals){ const t=RIVALS.find(x=>x.id===r.id); list.push({id:r.id,name:t?t.name:r.id,bias:t&&t.bias,might:Math.round(r.might)}); }
+    list.sort((a,b)=>b.might-a.might); return list; }
+  const myRank=g=>continentalRankings(g).findIndex(x=>x.me)+1;
 
   // ---- 연구 버프 → 전투 mods ----
   function researchMods(g){const m={};
@@ -930,6 +952,7 @@
     let heal=(g.castle.econ["병원"]||0)*3;
     for(const u in g.castle.wounded){if(heal<=0)break;const take=Math.min(g.castle.wounded[u],heal);g.castle.wounded[u]-=take;if(g.castle.wounded[u]<=0)delete g.castle.wounded[u];g.castle.garrison[u]=(g.castle.garrison[u]||0)+take;heal-=take;}
     aiTurn(g);                       // AI 생산 + 원정대 목적지 지정
+    rivalTick(g);                    // I1: 라이벌 왕국 국력 성장(방치 시 추월)
     const seasonEvent=seasonTick(g); // 시즌형 침공(B2) — 예고/도래
     const factionEvents=factionTick(g);   // 다수 세력(B1) — 야생에서 습격대 등장
     assignGatherOrders(g);          // H1: 자동채집 부대에 자원지 지정
@@ -959,7 +982,7 @@
   function offlineStep(g,rep){
     const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
     g.starving=g.res.식량<0; if(g.starving)g.res.식량=0;
-    autoProduceTick(g); tickProduction(g);
+    autoProduceTick(g); tickProduction(g); rivalTick(g);   // I1: 방치 중에도 라이벌 국력 성장(추월 긴장감)
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});if(rep)rep.research.push(k);}}
     if(g.castle.build){g.castle.build.left--;if(g.castle.build.left<=0){if(rep)rep.built.push(g.castle.build.label);completeBuild(g,g.castle.build);g.castle.build=null;}}
     let heal=(g.castle.econ["병원"]||0)*3;
@@ -998,6 +1021,7 @@
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,armyCapFor,
     SIEGE_COST,craftSiege,
     computeMight,enemyMight,MILESTONES,milestoneTick,milestoneAt,offlineTick,monsterScale,FACTIONS,
+    RIVALS,rivalTick,continentalRankings,myRank,threatMul,
     DRAGON_STAGES,DRAGON_SKILLS,dragonTick,investDragonSkill,assignDragon,dragonLoc,
     LORD_TALENTS,EQUIPMENT,EQUIP_SLOTS,ENHANCE_MULT,lordTick,investTalent,craftEquipment,enhanceEquipment,equipItem,unequipItem,lordXPNeed,enhanceCost,
     MONSTERS,RESPAWN_DELAY,mkMonster,setMap,DEFAULT_MAP,ECON_MAX,econCost,buildDur,
