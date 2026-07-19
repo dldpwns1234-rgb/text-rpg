@@ -872,10 +872,13 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     const {dist,prev}=dijkstra(a.node,99); if(dist[dest]===undefined) return"도달 불가";
     a.dest=dest; a.path=pathTo(dest,prev); a.moveProg=0; return null; }
   function stopMove(g,armyId){ const a=findArmy(g,armyId); if(a){a.dest=null;a.path=null;a.moveProg=0;} }
-  // 한 칸 진입 + 교전 해결. {battle} 반환.
-  function enterTile(g,a,next){ a.node=next; let battle=null;
-    if(next==="P"&&a.side==="E") battle=defendCastle(g,a);          // 성 수비: 주둔군 자동 방어
-    else { const enemy=armiesAt(g,next).find(x=>x.side!==a.side); if(enemy) battle=resolveBattle(g,a,enemy,next); }
+  // 한 칸 진입 + 교전 해결. {battle} 반환. 유저 요청: 몬스터/적 타일을 그냥 "지나가기만" 해도 전투가 발생하던 문제 —
+  // 경유지(중간 통과 타일)는 접촉해도 싸우지 않고, 목적지(a.dest)에 실제로 도착·정지할 때만 교전 판정.
+  function enterTile(g,a,next,isDest){ a.node=next; let battle=null;
+    if(isDest){
+      if(next==="P"&&a.side==="E") battle=defendCastle(g,a);          // 성 수비: 주둔군 자동 방어
+      else { const enemy=armiesAt(g,next).find(x=>x.side!==a.side); if(enemy) battle=resolveBattle(g,a,enemy,next); }
+    }
     const event=checkVictory(g); return {battle,event}; }
   // 매 틱: 이동 중인 모든 부대를 speed 만큼 전진(엣지 비용만큼 차면 한 칸). 접촉 시 교전(정지). 마지막 전투/세계이벤트 반환.
   function moveTick(g){ let battle=null, event=null;
@@ -891,7 +894,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
         const cost=(ADJ[a.node].find(n=>n.to===next)||{cost:1}).cost;
         if(a.moveProg<cost) break;                                 // 다음 타일 아직 못 감
         a.moveProg-=cost;
-        const r=enterTile(g,a,next);
+        const r=enterTile(g,a,next,next===a.dest);
         if(r.event) event=r.event;
         if(r.battle){ battle=r.battle; stopMove(g,a.id); break; }  // 접촉 전투 → 이동 정지
         if(!g.armies.includes(a)) break;                           // 전투로 제거됨
