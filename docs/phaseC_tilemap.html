@@ -68,6 +68,12 @@
   .sel-ring{fill:none;stroke:var(--gold);stroke-width:3;stroke-dasharray:4 3;}
   .prodrow{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--card2);}
   .prodrow .nm{flex:1;} .prodrow .cost{font-size:11px;color:var(--dim);}
+  .compgrid{display:grid;gap:2px;margin:4px 0;align-items:stretch;}   /* 출전 편성 그리드(열=병종,행=티어) — 유저 피드백: 세로 리스트가 너무 길다 */
+  .compgrid .gh{font-size:9px;color:var(--dim);text-align:center;padding:2px 0;white-space:nowrap;overflow:hidden;}
+  .compgrid .gcell{display:flex;flex-direction:column;align-items:stretch;background:var(--bg);border-radius:4px;overflow:hidden;}
+  .compgrid .gcell.empty{align-items:center;justify-content:center;color:var(--dim);font-size:10px;background:none;}
+  .compgrid .gbtn{font-size:10px;padding:2px 0;line-height:1.4;border-radius:0;min-height:0;}
+  .compgrid .gn{text-align:center;font-size:10px;padding:1px 0;background:var(--card2);}
   .hero{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px;margin:6px 0;}
   .hero .loc{font-size:11px;color:var(--gold);}
   .minibtn{font-size:11px;padding:3px 7px;}
@@ -562,7 +568,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
+    castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},presets:[null,null,null],econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0,lastWave:-99},
     raid:{need:4,holder:null,holdTurns:0,cleared:false,settled:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -1043,6 +1049,14 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     g.heroes.push({id:newId(g,"H"),name:name,type,grade:3,loc:"idle",traits:[randomTrait(type)]}); return null;}
   function draftAdjust(g,u,d){const gar=g.castle.garrison,draft=g.castle.draft;const avail=gar[u]||0,cur=draft[u]||0,tot=Object.values(draft).reduce((x,y)=>x+y,0);
     if(d>0&&(cur>=avail||tot>=armyCapFor(g)))return; const nv=Math.max(0,Math.min(avail,cur+d)); if(nv===0)delete draft[u];else draft[u]=nv;}
+  // 편성 즐겨찾기(3슬롯) — "즐겨쓰는 편성 저장/불러오기" 유저 요청. draft를 그대로 스냅샷하고, 불러올 땐 그 시점 보유량으로 캡(그 사이 병력이 줄었을 수 있음).
+  function savePreset(g,idx){ const tot=Object.values(g.castle.draft).reduce((x,y)=>x+y,0); if(tot<=0) return "편성된 병력이 없습니다";
+    g.castle.presets[idx]={...g.castle.draft}; return null; }
+  function loadPreset(g,idx){ const p=g.castle.presets[idx]; if(!p) return "빈 슬롯입니다";
+    const draft={}; let cap=armyCapFor(g), tot=0;
+    for(const u in p){ const n=Math.min(p[u], g.castle.garrison[u]||0, cap-tot); if(n>0){ draft[u]=n; tot+=n; } }
+    g.castle.draft=draft; return tot>0?null:"보유 병력이 부족해 불러올 수 없습니다"; }
+  function clearPreset(g,idx){ g.castle.presets[idx]=null; return null; }
   function makeArmyFromDraft(g){const draft=g.castle.draft,comp={};
     for(const u in draft){comp[u]=draft[u];g.castle.garrison[u]-=draft[u];if(g.castle.garrison[u]<=0)delete g.castle.garrison[u];}
     const army={id:newId(g,"P"),side:"P",node:"P",mp:pBaseMp(g),maxMp:pBaseMp(g),name:(g.armies.filter(a=>a.side==="P").length+1)+"군",comp,hero:null,dest:null,moveProg:0};
@@ -1342,7 +1356,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
     MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,assignGatherOrders,setGather,rallyToDefense,
-    produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
+    produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,savePreset,loadPreset,clearPreset,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
   global.Game=API;
@@ -1631,12 +1645,10 @@ function renderInfoAccordion(){
     ${open?body:""}
   </div>`;
 }
-let _lastSelKey=null;   // 새 선택에만 바텀시트를 자동 펼침(선택 유지 중 실시간 재생 틱마다 재열림 방지 — 수동으로 접은 걸 무시하면 안 됨)
+// 유저 피드백: 지도에서 타일/부대를 탭할 때마다 시트가 78vh로 펼쳐져 지도를 가림 → 탭만으로는 더 이상 자동 펼침 없음(접힌 18vh 안에서
+// #panelBody가 자체 스크롤로 갱신됨). 큰 화면이 필요하면 퀵바(qcQuest/qcCastle)나 qcSel 토글을 사용자가 직접 눌러야 함(그쪽은 openSheet 유지).
 function renderPanel(){
   const p=document.getElementById('panelBody'); const s=state.selected;
-  const selKey=s?`${s.kind}:${s.id}`:null;
-  if(selKey && selKey!==_lastSelKey) openSheet();   // 모바일: 새로 부대/성을 선택하면 바텀시트 자동 펼침 — 유저 피드백: 매번 열고 스크롤해야 해서 불편(그동안 openSheet가 실제로 호출되는 곳이 없던 결함)
-  _lastSelKey=selKey;
   let h=renderInfoAccordion();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
@@ -1651,7 +1663,7 @@ function renderPanel(){
      if(wTot>0) h+=`<div style="color:#fca5a5;font-size:12px">🩹 부상자 ${wTot} <span class="k">(병원 ${(state.castle.econ["병원"]||0)*3}/턴 치료)</span></div>`;}
     // 탭 바
     h+=`<div style="display:flex;gap:4px;margin:7px 0">`;
-    for(const t of ["건물","연구","선술집","출전","군주"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
+    for(const t of ["건물","연구","선술집","출전","편성","군주"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
     h+=`</div>`;
     if(tab==="건물"){
     if(busy){const pct=Math.round(100*(c.build.total-c.build.left)/c.build.total);
@@ -1780,6 +1792,23 @@ function renderPanel(){
         <button class="minibtn" id="deploy" style="border-color:var(--gold);color:var(--gold)" ${dt>0&&Game.canAddArmy(state)?"":"disabled"}>🚩 성에 출전</button>
         <button class="minibtn" id="draftClear" ${dt>0?"":"disabled"}>초기화</button></div>`; }
     } // ← 출전 탭 끝
+    if(tab==="편성"){
+    // ⭐ 편성 즐겨찾기(3슬롯) — 유저 요청: 자주 쓰는 편성을 저장해뒀다 출전 탭에서 바로 불러오기.
+    const draftTotal=Object.values(state.castle.draft).reduce((x,y)=>x+y,0);
+    h+=`<div class="k" style="font-size:11px;margin-bottom:6px">지금 출전 탭에서 편성 중인 병력을 슬롯에 저장해두면, 출전 탭 상단 ⭐버튼으로 바로 불러올 수 있습니다.</div>`;
+    const presets=state.castle.presets||[null,null,null];
+    presets.forEach((p,i)=>{
+      if(p){ const label=Object.entries(p).map(([u,cnt])=>`${unitLabel(u)}×${cnt}`).join(" · ");
+        h+=`<div class="prodrow"><span class="nm">⭐ 슬롯${i+1} <span class="k">${label}</span></span>
+          <button class="minibtn" data-savepreset="${i}" ${draftTotal>0?"":"disabled"}>덮어쓰기</button>
+          <button class="minibtn" data-clearpreset="${i}">삭제</button></div>`;
+      } else {
+        h+=`<div class="prodrow"><span class="nm">⭐ 슬롯${i+1} <span class="k">비어있음</span></span>
+          <button class="minibtn" data-savepreset="${i}" ${draftTotal>0?"":"disabled"}>현재 편성 저장</button></div>`;
+      }
+    });
+    if(draftTotal<=0) h+=`<div class="k" style="font-size:11px;margin-top:6px">저장하려면 먼저 "출전" 탭에서 편성을 만드세요.</div>`;
+    } // ← 편성 탭 끝
     if(tab==="군주"){
     // F4: 군주(레벨/재능/장비) — 몬스터 처치로 얻은 경험치·재료·설계도로 성장.
     // 모바일 스크롤 절감: 재능/장비/제작을 서브탭으로 분리(연구 탭 전투·내정 패턴 재사용) — 한 번에 하나만 표시.
@@ -1988,6 +2017,9 @@ function renderPanel(){
   p.querySelectorAll('[data-harmy]').forEach(b=>b.onclick=()=>assignHero(b.dataset.harmy,state.selected.id));
   p.querySelectorAll('[data-hidle]').forEach(b=>b.onclick=()=>assignHero(b.dataset.hidle,"idle"));
   p.querySelectorAll('[data-draft]').forEach(b=>b.onclick=()=>draftAdjust(b.dataset.draft,+b.dataset.d));
+  p.querySelectorAll('[data-loadpreset]').forEach(b=>b.onclick=()=>loadPreset(+b.dataset.loadpreset));
+  p.querySelectorAll('[data-savepreset]').forEach(b=>b.onclick=()=>savePreset(+b.dataset.savepreset));
+  p.querySelectorAll('[data-clearpreset]').forEach(b=>b.onclick=()=>clearPreset(+b.dataset.clearpreset));
   const dep=p.querySelector('#deploy'); if(dep) dep.onclick=deploy;
   const cs=p.querySelector('#craftSiege'); if(cs) cs.onclick=craftSiege;
   const dcl=p.querySelector('#draftClear'); if(dcl) dcl.onclick=()=>{state.castle.draft={};render();};
@@ -2056,28 +2088,44 @@ function craftSiege(){const m=Game.craftSiege(state); toast(m||`🏹 파성추 �
 function promoteHero(hid){const m=Game.promoteHero(state,hid); toast(m||"승급 특성을 선택하세요"); render();}
 function choosePromoteTrait(hid,traitId){const m=Game.choosePromoteTrait(state,hid,traitId); toast(m||`영웅 승급! ★${heroById(hid).grade}`); render();}
 function draftAdjust(u,d){Game.draftAdjust(state,u,d); render();}
+function savePreset(idx){const m=Game.savePreset(state,idx); toast(m||`⭐ 슬롯${idx+1} 저장됨`); render();}
+function loadPreset(idx){const m=Game.loadPreset(state,idx); toast(m||`⭐ 슬롯${idx+1} 불러옴`); render();}
+function clearPreset(idx){Game.clearPreset(state,idx); toast(`⭐ 슬롯${idx+1} 삭제됨`); render();}
 const GROUP_ICON={보병:"🛡",궁병:"🏹",기병:"🐎"};
-function composerHTML(){ // 재사용: 주둔군 → 출전 편성 UI (버튼은 호출부에서). 병종 그룹(보병/궁병/기병)별로 묶어 표시.
+const SHORT_NAME={중갑보병:"중갑",창병:"창병",장궁병:"장궁",석궁병:"석궁",경기병:"경기",중기병:"중기"};   // 그리드 컬럼 헤더용 축약(6유닛 고정 로스터라 하드코딩 안전)
+const ALL_UNITS=[].concat(...Object.values(GROUPS));   // 그룹 순서 보존한 6유닛 평탄화(그리드 열 순서)
+// ⭐ 편성 즐겨찾기 퀵버튼 — 출전 탭·노드 패널 양쪽에서 composerHTML()이 공용이라 여기 한 곳에 추가하면 두 진입점에 자동 반영.
+function renderPresetQuick(){
+  const presets=state.castle.presets||[null,null,null];
+  return `<div style="display:flex;gap:5px;margin-bottom:6px">`+presets.map((p,i)=>{
+    const label=p?Object.entries(p).map(([u,c])=>`${SHORT_NAME[baseOf(u)]||baseOf(u)}${c}`).join("·"):"빈 슬롯";
+    return `<button class="minibtn" data-loadpreset="${i}" style="flex:1;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" ${p?"":"disabled"}>⭐${i+1} ${label}</button>`;
+  }).join("")+`</div>`;
+}
+// 🚩 출전 편성 — 유저 피드백: 세로 리스트가 길다 → 열=병종, 행=티어 그리드로 압축(접힌 바텀시트 안에서도 닿을 정도로 짧게).
+function composerHTML(){
   const gar=state.castle.garrison, draft=state.castle.draft;
   const draftTotal=Object.values(draft).reduce((x,y)=>x+y,0), garTotal=Object.values(gar).reduce((x,y)=>x+y,0);
   const acap=Game.armySlots(state), acur=Game.pArmyCount(state), afull=!Game.canAddArmy(state);
   let h=`<div class="k" style="margin-bottom:4px">🚩 출전 편성 <span class="k">(주둔 ${garTotal} · 부대 <span style="color:${afull?'#fca5a5':'#cbd5e1'}">${acur}/${acap}</span>)</span></div>`;
   if(afull) h+=`<div class="k" style="font-size:11px;color:#fca5a5">부대 수 상한 도달 — 성 레벨업·군제 개편 연구로 확대</div>`;
+  h+=renderPresetQuick();
   if(garTotal===0 && draftTotal===0) return h+`<div class="k" style="font-size:12px">주둔 병력 없음 — 성에서 생산하세요.</div>`;
-  const allKeys=[...new Set([...Object.keys(gar),...Object.keys(draft)])];
-  for(const grp in GROUPS){
-    const rows=allKeys.filter(u=>GROUPS[grp].includes(baseOf(u)) && (gar[u]||0)+(draft[u]||0)>0)
-      .sort((a,b)=>GROUPS[grp].indexOf(baseOf(a))-GROUPS[grp].indexOf(baseOf(b))||tierOf(a)-tierOf(b));
-    if(!rows.length) continue;
-    const grpAvail=rows.reduce((s,u)=>s+(gar[u]||0),0), grpDraft=rows.reduce((s,u)=>s+(draft[u]||0),0);
-    h+=`<div class="k" style="font-size:11px;margin:6px 0 2px;color:#cbd5e1">${GROUP_ICON[grp]||""} ${grp} <span class="k">보유 ${grpAvail}${grpDraft?` · 편성 ${grpDraft}`:""}</span></div>`;
-    for(const u of rows){ const avail=gar[u]||0, d=draft[u]||0;
-      h+=`<div class="prodrow"><span class="nm">${unitLabel(u)} <span class="k">보유 ${avail}</span></span>
-        <button class="minibtn" data-draft="${u}" data-d="-1" ${d<=0?"disabled":""}>−</button>
-        <span style="min-width:18px;text-align:center">${d}</span>
-        <button class="minibtn" data-draft="${u}" data-d="1" ${d>=avail||draftTotal>=Game.armyCapFor(state)?"disabled":""}>＋</button></div>`;
+  const tiersUsed=[]; for(let t=1;t<=TIER_MAX;t++){ if(ALL_UNITS.some(u=>(gar[Game.uk(u,t)]||0)+(draft[Game.uk(u,t)]||0)>0)) tiersUsed.push(t); }
+  h+=`<div class="compgrid" style="grid-template-columns:26px repeat(${ALL_UNITS.length},1fr)">
+    <div></div>${ALL_UNITS.map(u=>`<div class="gh" title="${u}">${GROUP_ICON[GROUPS.보병.includes(u)?"보병":GROUPS.궁병.includes(u)?"궁병":"기병"]}${SHORT_NAME[u]||u}</div>`).join("")}`;
+  for(const t of tiersUsed){
+    h+=`<div class="gh">T${t}</div>`;
+    for(const u of ALL_UNITS){ const key=Game.uk(u,t), avail=gar[key]||0, d=draft[key]||0;
+      if(avail<=0 && d<=0){ h+=`<div class="gcell empty">–</div>`; continue; }
+      h+=`<div class="gcell">
+        <button class="gbtn" data-draft="${key}" data-d="1" ${d>=avail||draftTotal>=Game.armyCapFor(state)?"disabled":""}>＋</button>
+        <div class="gn">${d}<span class="k" style="font-size:8px">/${avail}</span></div>
+        <button class="gbtn" data-draft="${key}" data-d="-1" ${d<=0?"disabled":""}>−</button>
+      </div>`;
     }
   }
+  h+=`</div>`;
   return h+`<div class="k" style="font-size:12px;margin-top:4px">편성 ${draftTotal}/${Game.armyCapFor(state)}</div>`;
 }
 function deploy(){if(!Game.canAddArmy(state)){toast("부대 수 상한 도달 — 성 레벨업·군제 개편 필요");return;} const army=Game.deploy(state); if(army){state.selected={kind:"army",id:army.id};state.mode="normal";toast(`${army.name} 성에 출전!`);} render();}
@@ -2157,6 +2205,7 @@ function applySave(data){
   state.raidBossGen=state.raidBossGen||0;
   if(state.raid) state.raid.settled=state.raid.settled||false;   // 구버전 세이브 호환 — 고대성 점거 1회 발동 플래그
   state.ai=state.ai||{budget:0}; if(state.ai.lastWave==null)state.ai.lastWave=-99;   // 구버전 세이브 호환 — 웨이브 간격 추적
+  state.castle.presets=state.castle.presets||[null,null,null];   // 구버전 세이브 호환 — 편성 즐겨찾기 3슬롯
   state.rivals=state.rivals||Game.RIVALS.map(r=>({id:r.id,might:r.base})); state.rivalKills=state.rivalKills||0;   // 구버전 세이브 호환 — 라이벌 왕국(I1)
   state.rankSeason=state.rankSeason||{num:1,next:state.turn+Game.RANK_SEASON_LEN,score:0,bestRank:99,tierHist:[]};   // 구버전 세이브 호환 — 경쟁 시즌(I3)
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)

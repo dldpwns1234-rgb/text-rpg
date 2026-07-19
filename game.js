@@ -295,7 +295,7 @@
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},econ:{},wounded:{},wall:0,build:null,siegeItems:0},
+    castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},presets:[null,null,null],econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0,lastWave:-99},
     raid:{need:4,holder:null,holdTurns:0,cleared:false,settled:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -776,6 +776,14 @@
     g.heroes.push({id:newId(g,"H"),name:name,type,grade:3,loc:"idle",traits:[randomTrait(type)]}); return null;}
   function draftAdjust(g,u,d){const gar=g.castle.garrison,draft=g.castle.draft;const avail=gar[u]||0,cur=draft[u]||0,tot=Object.values(draft).reduce((x,y)=>x+y,0);
     if(d>0&&(cur>=avail||tot>=armyCapFor(g)))return; const nv=Math.max(0,Math.min(avail,cur+d)); if(nv===0)delete draft[u];else draft[u]=nv;}
+  // 편성 즐겨찾기(3슬롯) — "즐겨쓰는 편성 저장/불러오기" 유저 요청. draft를 그대로 스냅샷하고, 불러올 땐 그 시점 보유량으로 캡(그 사이 병력이 줄었을 수 있음).
+  function savePreset(g,idx){ const tot=Object.values(g.castle.draft).reduce((x,y)=>x+y,0); if(tot<=0) return "편성된 병력이 없습니다";
+    g.castle.presets[idx]={...g.castle.draft}; return null; }
+  function loadPreset(g,idx){ const p=g.castle.presets[idx]; if(!p) return "빈 슬롯입니다";
+    const draft={}; let cap=armyCapFor(g), tot=0;
+    for(const u in p){ const n=Math.min(p[u], g.castle.garrison[u]||0, cap-tot); if(n>0){ draft[u]=n; tot+=n; } }
+    g.castle.draft=draft; return tot>0?null:"보유 병력이 부족해 불러올 수 없습니다"; }
+  function clearPreset(g,idx){ g.castle.presets[idx]=null; return null; }
   function makeArmyFromDraft(g){const draft=g.castle.draft,comp={};
     for(const u in draft){comp[u]=draft[u];g.castle.garrison[u]-=draft[u];if(g.castle.garrison[u]<=0)delete g.castle.garrison[u];}
     const army={id:newId(g,"P"),side:"P",node:"P",mp:pBaseMp(g),maxMp:pBaseMp(g),name:(g.armies.filter(a=>a.side==="P").length+1)+"군",comp,hero:null,dest:null,moveProg:0};
@@ -1075,7 +1083,7 @@
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
     MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,assignGatherOrders,setGather,rallyToDefense,
-    produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,makeArmyFromDraft,deploy,deployTo,disband,
+    produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,savePreset,loadPreset,clearPreset,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
   if(typeof module!=="undefined"&&module.exports) module.exports=API; else global.Game=API;

@@ -68,6 +68,12 @@
   .sel-ring{fill:none;stroke:var(--gold);stroke-width:3;stroke-dasharray:4 3;}
   .prodrow{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--card2);}
   .prodrow .nm{flex:1;} .prodrow .cost{font-size:11px;color:var(--dim);}
+  .compgrid{display:grid;gap:2px;margin:4px 0;align-items:stretch;}   /* 출전 편성 그리드(열=병종,행=티어) — 유저 피드백: 세로 리스트가 너무 길다 */
+  .compgrid .gh{font-size:9px;color:var(--dim);text-align:center;padding:2px 0;white-space:nowrap;overflow:hidden;}
+  .compgrid .gcell{display:flex;flex-direction:column;align-items:stretch;background:var(--bg);border-radius:4px;overflow:hidden;}
+  .compgrid .gcell.empty{align-items:center;justify-content:center;color:var(--dim);font-size:10px;background:none;}
+  .compgrid .gbtn{font-size:10px;padding:2px 0;line-height:1.4;border-radius:0;min-height:0;}
+  .compgrid .gn{text-align:center;font-size:10px;padding:1px 0;background:var(--card2);}
   .hero{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px;margin:6px 0;}
   .hero .loc{font-size:11px;color:var(--gold);}
   .minibtn{font-size:11px;padding:3px 7px;}
