@@ -822,7 +822,11 @@ function stepTurn(){
 }
 // 실시간 상태(UI 전용, 저장 안 함). 기본 일시정지 — 플레이어가 첫 수를 두고 ▶ 재생.
 let rtPaused=true, rtSpeed=1, rtTimer=null;
-const RT_BASE=2500;   // 1x 틱 간격(ms). 클릭 기반 조작에 여유를 주려 느긋하게(배속 2x=1.25s·4x=0.625s).
+// 유저 피드백: "몇 분 안 됐는데 턴이 몇백 쌓여 T5·수천 자원·수백 병력까지 순식간" — 건설/연구/생산 durations은 전부
+// "턴 수"로 정의돼 있는데(예: 건물 3턴), 그 턴이 실시간 2.5초마다 자동으로 흐르니 몇 분이면 수백 턴이 지나가 버림.
+// game.js의 개별 상수(TRAIN_TICKS·buildDur·RESEARCH turns 등)를 전부 손대는 대신, 틱 간격 하나만 4배 늦춰
+// 건설·연구·생산·수입·AI 위협까지 전부 같은 비율로 느려지게(단일 레버). sim.js는 턴 수 기반이라 이 상수와 무관 — 영향 없음.
+const RT_BASE=10000;   // 1x 틱 간격(ms, 기존 2500→10000). 배속 2x=5s·4x=2.5s(구 1x와 동일한 체감).
 function rtStop(){ rtPaused=true; if(rtTimer){clearInterval(rtTimer);rtTimer=null;} rtSync(); }
 function rtPause(){ rtStop(); }
 function rtPlay(){ if(state.over)return; rtPaused=false; if(rtTimer)clearInterval(rtTimer);
