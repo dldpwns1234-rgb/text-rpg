@@ -877,8 +877,11 @@ function openSheet(){ document.getElementById('panel')?.classList.add('sheetOpen
 function closeSheet(){ document.getElementById('panel')?.classList.remove('sheetOpen'); }
 const isSheetOpen=()=>!!document.getElementById('panel')?.classList.contains('sheetOpen');
 (function(){   // 퀵바 4칸(목표/내정/부대출전/선택) — 이미 그 화면이 열려 있으면 탭해서 닫고, 아니면 그 컨텍스트로 열기.
-  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qd=document.getElementById('qcDeploy'), qs=document.getElementById('qcSel');
+  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qd=document.getElementById('qcDeploy'), qs=document.getElementById('qcSel'), qm=document.getElementById('qcMap');
   if(!qq) return;   // 구버전 템플릿 방어
+  // 유저 피드백: 내정 시트(78vh)가 열리면 지도가 완전히 가려져 타일을 탭할 수 없음(시트가 위에서 다 가로챔) —
+  // 스크롤 깊이·탭과 무관하게 항상 닿는 손잡이(sticky)에 "지도로" 전용 버튼을 둬서 즉시 지도로 복귀 가능하게.
+  if(qm) qm.onclick=()=>{ state.selected=null; state.pendingMove=null; state.mode="normal"; closeSheet(); render(); };
   qq.onclick=()=>{ if(!state.selected && isSheetOpen()) closeSheet();
     else { state.selected=null; state.infoOpen=true; openSheet(); } render(); };
   qc.onclick=()=>{ const active=state.selected?.kind==="node"&&state.selected.id==="P"&&state.castleTab!=="출전";
