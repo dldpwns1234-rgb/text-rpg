@@ -47,8 +47,11 @@
       border:1px solid var(--line);border-radius:10px;padding:8px;flex-direction:column;z-index:16;
       box-shadow:0 6px 16px rgba(0,0,0,.4);}
     .menu-drop.hidden{display:none;}
-    .sheet-handle{display:flex;justify-content:center;align-items:center;gap:6px;margin:-12px -12px 8px;
-      padding:8px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--line);cursor:pointer;}
+    .sheet-handle{display:flex;margin:-12px -12px 8px;border-bottom:1px solid var(--line);}
+    .qc{flex:1;min-width:0;text-align:center;font-size:11px;color:var(--dim);padding:9px 4px;
+      cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid var(--line);}
+    .qc:last-child{border-right:none;}
+    .qc:active{background:var(--card2);}   /* 유저 피드백: 손잡이 대신 목표·내정·선택 3칸 퀵바 — 탭하면 바로 그 화면으로 */
     .panel{position:fixed;left:0;right:0;bottom:0;max-height:18vh;overflow-y:auto;
       border-radius:14px 14px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,.45);z-index:15;
       transition:max-height .25s ease;}
@@ -104,11 +107,14 @@
 <div class="wrap">
   <div class="mapbox"><svg id="map" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet"></svg></div>
   <div id="panel" class="panel">
-    <div class="sheet-handle" id="sheetHandle">▲ 정보·부대 패널 (탭해서 펼치기/접기)</div>
+    <div class="sheet-handle" id="sheetHandle">
+      <div class="qc" id="qcQuest"></div>
+      <div class="qc" id="qcCastle"></div>
+      <div class="qc" id="qcSel"></div>
+    </div>
     <div id="panelBody"></div>
   </div>
 </div>
-<div class="k" style="font-size:12px;margin-top:8px">채집·생산으로 국력을 키우는 <b>지속형 왕국</b>. 적 성 함락·고대성 레이드는 게임오버가 아니라 보상+마일스톤으로 이어지는 사건 — 왕국은 계속 성장합니다. 부대가 적과 만나면 전투 엔진으로 교전하고, 성 수비는 성벽 보정을 받습니다.</div>
 <div class="toast" id="toast"></div>
 <div id="modal" class="modal-overlay hidden"><div class="modal" id="modalBody"></div></div>
 

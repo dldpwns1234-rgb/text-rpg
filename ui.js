@@ -19,6 +19,19 @@ function renderResBar(){
     +`<span class="res" style="border-color:#c084fc;color:#c084fc">🐉 용린 <b>${state.dragonScale||0}</b></span>`;
   document.getElementById('turn').textContent=state.turn;
 }
+// 📱 모바일 하단 퀵바(3칸) — 유저 피드백: "탭해서 펼치기/접기"뿐인 손잡이 대신, 목표·내정·선택 대상을 바로 보여주고 탭하면 그 화면으로.
+// 데스크톱은 .sheet-handle이 display:none이라 무해(렌더는 하되 안 보임).
+function renderQuickBar(){
+  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qs=document.getElementById('qcSel');
+  if(!qq) return;   // 구버전 템플릿(마크업 없음) 방어
+  const Q=Game.QUESTS, q=state.quests||{idx:0};
+  qq.textContent = (Q&&q.idx<Q.length) ? `📋 목표 ${q.idx+1}/${Q.length}` : `🏆 대륙 #${Game.myRank?Game.myRank(state):"?"}`;
+  qc.textContent = `🏰 내정 Lv.${state.castle.level}`;
+  const s=state.selected;
+  qs.textContent = !s ? "🗺 지도에서 선택"
+    : s.kind==="army" ? `⚔ ${A(s.id)?.name||"부대"}`
+    : `📍 ${NODES[s.id]?.name||"위치"}`;
+}
 // 🏅 다음 마일스톤(A2) — 국력 진행바. 전부 달성하면 숨김.
 function renderMilestone(){
   const ms=state.milestones||{idx:0};
@@ -107,9 +120,19 @@ function renderCompetition(){
     ${open?`<div style="margin-top:6px">${renderRankings()}${renderRankSeason()}</div>`:""}
   </div>`;
 }
-// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/경쟁(랭킹+시즌)/시즌침공/세력정보를 한 덩어리로 접고 펼침.
+// ℹ️ 게임 설명 — 원래 지도 아래 항상 떠 있던 문단. 유저 피드백: 화면 공간을 잡아먹는다 → 접이식으로 이전(기본 접힘).
+function renderAbout(){
+  const open=state.aboutOpen===true;
+  return `<div style="margin-bottom:10px">
+    <div id="aboutToggle" style="cursor:pointer;font-size:11px;color:var(--dim);display:flex;justify-content:space-between;align-items:center">
+      <span>ℹ️ 게임 설명</span><span>${open?"▲":"▼"}</span>
+    </div>
+    ${open?`<div class="k" style="font-size:12px;margin-top:4px">채집·생산으로 국력을 키우는 <b>지속형 왕국</b>. 적 성 함락·고대성 레이드는 게임오버가 아니라 보상+마일스톤으로 이어지는 사건 — 왕국은 계속 성장합니다. 부대가 적과 만나면 전투 엔진으로 교전하고, 성 수비는 성벽 보정을 받습니다.</div>`:""}
+  </div>`;
+}
+// 📋 현황 아코디언(모바일 스크롤 절감) — 퀘스트/마일스톤/경쟁(랭킹+시즌)/시즌침공/세력정보/설명을 한 덩어리로 접고 펼침.
 function renderInfoAccordion(){
-  const body=renderQuests()+renderMilestone()+renderCompetition()+renderSeason()+renderFactionInfo();
+  const body=renderQuests()+renderMilestone()+renderCompetition()+renderSeason()+renderFactionInfo()+renderAbout();
   if(!body) return "";
   const open=state.infoOpen!==false;
   return `<div style="margin-bottom:4px">
@@ -447,6 +470,7 @@ function renderPanel(){
   // 핸들러
   const infoT=p.querySelector('#infoToggle'); if(infoT) infoT.onclick=()=>{state.infoOpen=!(state.infoOpen!==false);render();};
   const compT=p.querySelector('#compToggle'); if(compT) compT.onclick=()=>{state.compOpen=!(state.compOpen===true);render();};
+  const aboutT=p.querySelector('#aboutToggle'); if(aboutT) aboutT.onclick=()=>{state.aboutOpen=!(state.aboutOpen===true);render();};
   const mgmtT=p.querySelector('#mgmtToggle'); if(mgmtT) mgmtT.onclick=()=>{state.mgmtOpen=!(state.mgmtOpen===true);render();};
   const rl=p.querySelector('#rallyBtn'); if(rl) rl.onclick=()=>{const n=Game.rallyToDefense(state); toast(n?`⚔ ${n}개 부대 소집 — 성으로 귀환 중`:"소집할 부대 없음"); render();};
   p.querySelectorAll('[data-bld]').forEach(b=>b.onclick=()=>{state.castle.openBuilding=b.dataset.bld;render();});
@@ -491,7 +515,7 @@ function renderPanel(){
   p.querySelectorAll('[data-research]').forEach(b=>b.onclick=()=>startResearch(b.dataset.research));
   p.querySelectorAll('[data-rtab]').forEach(b=>b.onclick=()=>{state.research.tab=b.dataset.rtab;render();});
 }
-function render(){renderMap();renderResBar();renderPanel();renderMoveConfirm();}
+function render(){renderMap();renderResBar();renderQuickBar();renderPanel();renderMoveConfirm();}
 
 function attach(){
   svg.querySelectorAll('[data-confirm]').forEach(g=>g.onclick=e=>{e.stopPropagation();confirmMove();});
@@ -628,7 +652,7 @@ function showBattleModal(sum){
 // 🌍 세계 이벤트(A3, 정복·함락·레이드)는 stepTurn에서 배너/토스트로 직접 처리 — 재생을 끊지 않으려 모달을 쓰지 않는다(유저 요청).
 
 /* ===== 저장/불러오기 ===== */
-const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier","infoOpen","lordTab","compOpen"];
+const SAVE_KEY="mini4x_save_v1", UI_FIELDS=["selected","pendingMove","mode","castleTab","prodTier","infoOpen","lordTab","compOpen","aboutOpen"];
 function saveSnapshot(){const o={...state,ancientOwner:NODES.ANCIENT.owner,savedAt:Date.now()};for(const f of UI_FIELDS)delete o[f];return JSON.parse(JSON.stringify(o));}
 function applySave(data){
   if(typeof rtStop==="function")rtStop();   // 로드/새게임 시 실시간 루프 정지
@@ -774,8 +798,16 @@ svg.addEventListener('click',()=>{state.selected=null;state.pendingMove=null;sta
 // ---- 바텀시트(모바일) — 부대/성 선택 시 자동으로 펼침, 지도 배경 탭·손잡이 탭으로 접음. 데스크톱은 CSS가 무시(항상 펼침 레이아웃).
 function openSheet(){ document.getElementById('panel')?.classList.add('sheetOpen'); }
 function closeSheet(){ document.getElementById('panel')?.classList.remove('sheetOpen'); }
-(function(){ const h=document.getElementById('sheetHandle'); if(!h) return;
-  h.onclick=()=>document.getElementById('panel').classList.toggle('sheetOpen');
+const isSheetOpen=()=>!!document.getElementById('panel')?.classList.contains('sheetOpen');
+(function(){   // 퀵바 3칸(목표/내정/선택) — 이미 그 화면이 열려 있으면 탭해서 닫고, 아니면 그 컨텍스트로 열기.
+  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qs=document.getElementById('qcSel');
+  if(!qq) return;   // 구버전 템플릿 방어
+  qq.onclick=()=>{ if(!state.selected && isSheetOpen()) closeSheet();
+    else { state.selected=null; state.infoOpen=true; openSheet(); } render(); };
+  qc.onclick=()=>{ const active=state.selected?.kind==="node"&&state.selected.id==="P";
+    if(active && isSheetOpen()) closeSheet();
+    else { state.pendingMove=null; state.selected={kind:"node",id:"P"}; openSheet(); } render(); };
+  qs.onclick=()=>{ isSheetOpen()?closeSheet():openSheet(); render(); };   // 현재 선택 대상은 바꾸지 않고 열기/닫기만
 })();
 // ---- 지도 드래그 팬(모바일) — .mapbox가 svg보다 작을 때만 의미 있음(데스크톱은 콘텐츠가 꽉 차 사실상 무동작).
 let resetMapPan=()=>{};
