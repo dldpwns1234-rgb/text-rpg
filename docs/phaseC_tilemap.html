@@ -116,6 +116,7 @@
     <div class="sheet-handle" id="sheetHandle">
       <div class="qc" id="qcQuest"></div>
       <div class="qc" id="qcCastle"></div>
+      <div class="qc" id="qcDeploy"></div>
       <div class="qc" id="qcSel"></div>
     </div>
     <div id="panelBody"></div>
@@ -1525,11 +1526,12 @@ function renderResBar(){
 // 📱 모바일 하단 퀵바(3칸) — 유저 피드백: "탭해서 펼치기/접기"뿐인 손잡이 대신, 목표·내정·선택 대상을 바로 보여주고 탭하면 그 화면으로.
 // 데스크톱은 .sheet-handle이 display:none이라 무해(렌더는 하되 안 보임).
 function renderQuickBar(){
-  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qs=document.getElementById('qcSel');
+  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qd=document.getElementById('qcDeploy'), qs=document.getElementById('qcSel');
   if(!qq) return;   // 구버전 템플릿(마크업 없음) 방어
   const Q=Game.QUESTS, q=state.quests||{idx:0};
   qq.textContent = (Q&&q.idx<Q.length) ? `📋 목표 ${q.idx+1}/${Q.length}` : `🏆 대륙 #${Game.myRank?Game.myRank(state):"?"}`;
   qc.textContent = `🏰 내정 Lv.${state.castle.level}`;
+  if(qd) qd.textContent = `⚔ 부대출전 ${Game.pArmyCount?Game.pArmyCount(state):""}`.trim();
   const s=state.selected;
   qs.textContent = !s ? "🗺 지도에서 선택"
     : s.kind==="army" ? `⚔ ${A(s.id)?.name||"부대"}`
@@ -1649,7 +1651,9 @@ function renderInfoAccordion(){
 // #panelBody가 자체 스크롤로 갱신됨). 큰 화면이 필요하면 퀵바(qcQuest/qcCastle)나 qcSel 토글을 사용자가 직접 눌러야 함(그쪽은 openSheet 유지).
 function renderPanel(){
   const p=document.getElementById('panelBody'); const s=state.selected;
-  let h=renderInfoAccordion();
+  // 유저 피드백: "목표·마일스톤·위협 현황판이 문제" — 뭔가 선택돼 있으면 그 화면이 우선이라, 아무것도 선택 안 됐을 때만 현황 아코디언 표시.
+  // 목표/마일스톤/위협은 여전히 qcQuest 퀵바(selected=null로 세팅 후 열림)로 언제든 접근 가능.
+  let h=s?"":renderInfoAccordion();
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
     const tab=state.castleTab||"건물"; const busy=!!c.build;
@@ -2054,7 +2058,9 @@ function attach(){
     const sel=state.selected?.kind==="army"?A(state.selected.id):null;
     if(sel && sel.side==="P"){ const {dist}=dijkstra(sel.node,99);
       if(dist[c.dataset.node]!==undefined && c.dataset.node!==sel.node){ stageMove(c.dataset.node); return; } }
-    state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node}; render();});
+    state.pendingMove=null; state.selected={kind:"node",id:c.dataset.node};
+    if(NODES[c.dataset.node].type==="castle"&&NODES[c.dataset.node].owner==="P") state.castleTab="출전";   // 유저 요청: 타일 탭 → 바로 출전 화면
+    render();});
 }
 function stageMove(target){ // 1단계: 목적지 미리보기 (확정 전엔 명령 안 내림)
   if(state.over) return;
@@ -2337,14 +2343,17 @@ svg.addEventListener('click',()=>{state.selected=null;state.pendingMove=null;sta
 function openSheet(){ document.getElementById('panel')?.classList.add('sheetOpen'); }
 function closeSheet(){ document.getElementById('panel')?.classList.remove('sheetOpen'); }
 const isSheetOpen=()=>!!document.getElementById('panel')?.classList.contains('sheetOpen');
-(function(){   // 퀵바 3칸(목표/내정/선택) — 이미 그 화면이 열려 있으면 탭해서 닫고, 아니면 그 컨텍스트로 열기.
-  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qs=document.getElementById('qcSel');
+(function(){   // 퀵바 4칸(목표/내정/부대출전/선택) — 이미 그 화면이 열려 있으면 탭해서 닫고, 아니면 그 컨텍스트로 열기.
+  const qq=document.getElementById('qcQuest'), qc=document.getElementById('qcCastle'), qd=document.getElementById('qcDeploy'), qs=document.getElementById('qcSel');
   if(!qq) return;   // 구버전 템플릿 방어
   qq.onclick=()=>{ if(!state.selected && isSheetOpen()) closeSheet();
     else { state.selected=null; state.infoOpen=true; openSheet(); } render(); };
-  qc.onclick=()=>{ const active=state.selected?.kind==="node"&&state.selected.id==="P";
+  qc.onclick=()=>{ const active=state.selected?.kind==="node"&&state.selected.id==="P"&&state.castleTab!=="출전";
     if(active && isSheetOpen()) closeSheet();
-    else { state.pendingMove=null; state.selected={kind:"node",id:"P"}; openSheet(); } render(); };
+    else { state.pendingMove=null; state.selected={kind:"node",id:"P"}; if(state.castleTab==="출전")state.castleTab="건물"; openSheet(); } render(); };
+  if(qd) qd.onclick=()=>{ const active=state.selected?.kind==="node"&&state.selected.id==="P"&&state.castleTab==="출전";   // 유저 요청: '⚔부대출전' 고정 칸 — 항상 성 출전 화면으로 직행
+    if(active && isSheetOpen()) closeSheet();
+    else { state.pendingMove=null; state.selected={kind:"node",id:"P"}; state.castleTab="출전"; openSheet(); } render(); };
   qs.onclick=()=>{ isSheetOpen()?closeSheet():openSheet(); render(); };   // 현재 선택 대상은 바꾸지 않고 열기/닫기만
 })();
 // ---- 지도 드래그 팬(모바일) — .mapbox가 svg보다 작을 때만 의미 있음(데스크톱은 콘텐츠가 꽉 차 사실상 무동작).
