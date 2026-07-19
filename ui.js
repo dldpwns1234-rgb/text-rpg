@@ -214,7 +214,12 @@ function renderPanel(){
           <button class="minibtn" data-make="${u}">생산</button>
           <button class="minibtn" data-auto="${u}" style="${autoOn?'background:var(--line);border-color:var(--green);color:var(--green)':''}" title="반복 생산">🔁</button></div>`;
       }
-      if(ap) h+=`<div class="k" style="font-size:11px;color:var(--green)">🔁 ${ap.u} T${ap.tier} 자동 반복 생산 중 — 자원 되는 한 계속 훈련</div>`;
+      if(ap){
+        // 유저 피드백: "T3 눌렀는데 T1이 생산되는 것 같다" — 티어 전환 전 이미 대기열에 있던(자원 지불 완료) 구 티어 주문이
+        // 먼저 소진돼야 새 티어가 시작됨(정상 동작, 자원 손실 방지). 화면에 안내가 없어 혼란스러웠으므로 명시.
+        const key=Game.uk(ap.u,ap.tier), bq=c.queue[ob]||[], hasOld=bq.some(k=>k!==key);
+        h+=`<div class="k" style="font-size:11px;color:var(--green)">🔁 ${ap.u} T${ap.tier} 자동 반복 생산 중 — 자원 되는 한 계속 훈련${hasOld?' <span style="color:var(--gold)">· 이전 대기열(다른 티어) 소진 후 시작</span>':''}</div>`;
+      }
     }
     // 🏗 자원 건물 — 레벨업(출력↑, 시간 소요). 병원은 레벨×3 치료
     h+=`<hr><div class="k" style="margin-bottom:4px">🏗 자원 건물 <span class="k">(레벨업 = 출력↑)</span></div>`;
