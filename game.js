@@ -487,7 +487,9 @@
     const beforeA={...attacker.comp},beforeB={...defender.comp};
     const res=simulate(compArr(attacker),aB,compArr(defender),dB,BATTLE_ROUNDS,modsA,modsB);
     const last=res.frames[res.frames.length-1];
-    const rebuild=s=>{const c={};for(const x of last[s])if(x.alive>0)c[x.name]=(c[x.name]||0)+x.alive;return c;};
+    // 버그 수정: 전투 후 생존 병력을 재구성할 때 x.name(기본 병종명)만 키로 써서 티어(@T2/@T3 등)가 사라지고
+    // 전부 T1 취급되던 문제 — 전투가 벌어질 때마다 "T1이 늘어나는" 것처럼 보였음. uk()로 티어를 다시 살려 키를 만든다.
+    const rebuild=s=>{const c={};for(const x of last[s])if(x.alive>0){const k=uk(x.name,x.tier);c[k]=(c[k]||0)+x.alive;}return c;};
     const rA=rebuild("A"),rB=rebuild("B");
     const wound=(army,before,after,hero)=>{if(army.side!=="P")return 0;let t=0;
       const wr=Math.max(0,WOUND_RATE-(hero?traitSum(hero,"woundReduce"):0));   // 인내형 특성: 부상률 완화
