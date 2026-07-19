@@ -2355,15 +2355,30 @@ let rtPaused=true, rtSpeed=1, rtTimer=null;
 // game.js의 개별 상수(TRAIN_TICKS·buildDur·RESEARCH turns 등)를 전부 손대는 대신, 틱 간격 하나만 4배 늦춰
 // 건설·연구·생산·수입·AI 위협까지 전부 같은 비율로 느려지게(단일 레버). sim.js는 턴 수 기반이라 이 상수와 무관 — 영향 없음.
 const RT_BASE=10000;   // 1x 틱 간격(ms, 기존 2500→10000). 배속 2x=5s·4x=2.5s(구 1x와 동일한 체감).
-function rtStop(){ rtPaused=true; if(rtTimer){clearInterval(rtTimer);rtTimer=null;} rtSync(); }
+// 유저 피드백: "10초 동안 게임이 멈춘 것처럼 보인다" — RT_BASE를 4배 늦추니(위) 한 틱 사이에 화면이 전혀
+// 안 바뀌는 구간이 길어져 정지처럼 느껴짐. 게임 로직은 그대로 두고, 다음 틱까지 남은 시간을 CSS transition으로
+// 채워지는 얇은 진행바로 보여줘 "멈춘 게 아니라 흘러가고 있다"를 시각적으로 알려준다.
+// CSS transition(강제 리플로우) 방식은 백그라운드/비포커스 탭에서 컴포지터가 늦게 반영해 안 움직이는 경우가 있어,
+// 대신 경과 시간을 직접 계산해 매 프레임 폭을 갱신(requestAnimationFrame) — 더 견고함.
+let tickBarSince=0, tickBarRAF=null;
+function tickBarLoop(){ const f=document.getElementById('tickBarFill');
+  if(!f||rtPaused){ tickBarRAF=null; return; }
+  const pct=Math.min(100,(Date.now()-tickBarSince)/(RT_BASE/rtSpeed)*100);
+  f.style.width=pct+"%";
+  tickBarRAF=requestAnimationFrame(tickBarLoop); }
+function tickBarReset(){ const f=document.getElementById('tickBarFill'); if(f)f.style.width="0%"; if(tickBarRAF){cancelAnimationFrame(tickBarRAF);tickBarRAF=null;} }
+function tickBarStart(){ tickBarSince=Date.now(); if(!tickBarRAF) tickBarRAF=requestAnimationFrame(tickBarLoop); }
+function rtStop(){ rtPaused=true; if(rtTimer){clearInterval(rtTimer);rtTimer=null;} tickBarReset(); rtSync(); }
 function rtPause(){ rtStop(); }
 function rtPlay(){ if(state.over)return; rtPaused=false; if(rtTimer)clearInterval(rtTimer);
-  rtTimer=setInterval(()=>{ if(!rtPaused&&!state.over) stepTurn(); }, RT_BASE/rtSpeed); rtSync(); }
+  tickBarStart();
+  rtTimer=setInterval(()=>{ if(!rtPaused&&!state.over){ stepTurn(); tickBarStart(); } }, RT_BASE/rtSpeed); rtSync(); }
 function rtToggle(){ rtPaused?rtPlay():rtPause(); }
 function rtSetSpeed(s){ rtSpeed=s; if(!rtPaused)rtPlay(); rtSync(); }   // 재생 중이면 재시작으로 간격 반영
 function rtSync(){ const pb=document.getElementById('rtPlay'); if(!pb)return;
   pb.textContent=rtPaused?"▶ 재생":"⏸ 일시정지";
   pb.style.background=rtPaused?"":"var(--green)"; pb.style.color=rtPaused?"":"#04240f";
+  const tb=document.getElementById('tickBar'); if(tb) tb.style.opacity=rtPaused?"0.25":"1";
   document.querySelectorAll('.rtspeed').forEach(b=>{const on=+b.dataset.spd===rtSpeed;
     b.style.background=on?'var(--gold)':''; b.style.color=on?'#04240f':''; b.style.borderColor=on?'var(--gold)':'';});
 }
@@ -2372,7 +2387,8 @@ function rtSync(){ const pb=document.getElementById('rtPlay'); if(!pb)return;
   et.textContent="⏭ 한 틱"; et.title="수동으로 한 틱 진행(일시정지 중 유용)";
   const w=document.createElement('span'); w.style.cssText="display:flex;gap:3px;align-items:center";
   w.innerHTML=`<button id="rtPlay" title="시간 재생/일시정지">▶ 재생</button>`
-    +[1,2,4].map(s=>`<button class="rtspeed minibtn" data-spd="${s}" title="배속 ${s}x">${s}x</button>`).join("");
+    +[1,2,4].map(s=>`<button class="rtspeed minibtn" data-spd="${s}" title="배속 ${s}x">${s}x</button>`).join("")
+    +`<span id="tickBar" title="다음 턴까지" style="display:inline-block;width:34px;height:6px;background:var(--line);border-radius:3px;overflow:hidden;opacity:.25"><span id="tickBarFill" style="display:block;height:100%;width:0%;background:var(--green)"></span></span>`;
   et.parentNode.insertBefore(w, et);
   document.getElementById('rtPlay').onclick=rtToggle;
   w.querySelectorAll('[data-spd]').forEach(b=>b.onclick=()=>rtSetSpeed(+b.dataset.spd));
