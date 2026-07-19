@@ -1484,7 +1484,11 @@ function renderMap(){
   for(const a of state.armies){
     let [x,y]=COORDS[a.node]; const others=armiesAt(a.node);
     if(a.dest&&a.path){const _i=a.path.indexOf(a.node),_nx=a.path[_i+1];   // 타일 사이 위치 보간(진행도)
-      if(_nx&&COORDS[_nx]){const _p=Math.max(0,Math.min(1,a.moveProg||0));x+=(COORDS[_nx][0]-x)*_p;y+=(COORDS[_nx][1]-y)*_p;}}
+      // 유저 피드백: 틱 사이(10초)에 화면이 통째로 멈춰 보임 — 실제 틱값(a.moveProg)에 "이번 틱 시작 후 지난 실제 시간" 만큼의
+      // 예상 진행분을 더해 매 프레임 조금씩 앞으로 미리 보여줌(다음 틱이 오면 실제값으로 자연히 맞춰짐, 되돌아가지 않게 상한).
+      if(_nx&&COORDS[_nx]){ let _p=Math.max(0,Math.min(1,a.moveProg||0));
+        if(!rtPaused&&typeof tickBarSince!=="undefined"){ const extra=Game.armySpeed(state,a)*((Date.now()-tickBarSince)/(RT_BASE/rtSpeed)); _p=Math.max(0,Math.min(1,_p+Math.max(0,extra))); }
+        x+=(COORDS[_nx][0]-x)*_p;y+=(COORDS[_nx][1]-y)*_p;}}
     const idx=others.indexOf(a), off=others.length>1?(idx-(others.length-1)/2)*26:0;
     const ax=x+off,ay=y-2;
     const sel = state.selected?.kind==="army"&&state.selected.id===a.id;
@@ -2361,10 +2365,14 @@ const RT_BASE=10000;   // 1x 틱 간격(ms, 기존 2500→10000). 배속 2x=5s·
 // CSS transition(강제 리플로우) 방식은 백그라운드/비포커스 탭에서 컴포지터가 늦게 반영해 안 움직이는 경우가 있어,
 // 대신 경과 시간을 직접 계산해 매 프레임 폭을 갱신(requestAnimationFrame) — 더 견고함.
 let tickBarSince=0, tickBarRAF=null;
+// 유저 피드백(2차): "진행바 말고 화면 전체가 조금씩 움직여야" — 같은 rAF 루프에서 지도도 매 프레임 다시 그려
+// 부대 토큰이 틱 사이에도 실제 시간만큼 미리 부드럽게 전진해 보이게(renderMap의 보간식이 tickBarSince를 읽음).
+// 패널/자원바는 비용이 커서 매 프레임 안 건드리고 실제 틱(stepTurn)에만 갱신.
 function tickBarLoop(){ const f=document.getElementById('tickBarFill');
   if(!f||rtPaused){ tickBarRAF=null; return; }
   const pct=Math.min(100,(Date.now()-tickBarSince)/(RT_BASE/rtSpeed)*100);
   f.style.width=pct+"%";
+  if(typeof renderMap==="function") renderMap();
   tickBarRAF=requestAnimationFrame(tickBarLoop); }
 function tickBarReset(){ const f=document.getElementById('tickBarFill'); if(f)f.style.width="0%"; if(tickBarRAF){cancelAnimationFrame(tickBarRAF);tickBarRAF=null;} }
 function tickBarStart(){ tickBarSince=Date.now(); if(!tickBarRAF) tickBarRAF=requestAnimationFrame(tickBarLoop); }

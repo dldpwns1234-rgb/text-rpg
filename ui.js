@@ -833,10 +833,14 @@ const RT_BASE=10000;   // 1x 틱 간격(ms, 기존 2500→10000). 배속 2x=5s·
 // CSS transition(강제 리플로우) 방식은 백그라운드/비포커스 탭에서 컴포지터가 늦게 반영해 안 움직이는 경우가 있어,
 // 대신 경과 시간을 직접 계산해 매 프레임 폭을 갱신(requestAnimationFrame) — 더 견고함.
 let tickBarSince=0, tickBarRAF=null;
+// 유저 피드백(2차): "진행바 말고 화면 전체가 조금씩 움직여야" — 같은 rAF 루프에서 지도도 매 프레임 다시 그려
+// 부대 토큰이 틱 사이에도 실제 시간만큼 미리 부드럽게 전진해 보이게(renderMap의 보간식이 tickBarSince를 읽음).
+// 패널/자원바는 비용이 커서 매 프레임 안 건드리고 실제 틱(stepTurn)에만 갱신.
 function tickBarLoop(){ const f=document.getElementById('tickBarFill');
   if(!f||rtPaused){ tickBarRAF=null; return; }
   const pct=Math.min(100,(Date.now()-tickBarSince)/(RT_BASE/rtSpeed)*100);
   f.style.width=pct+"%";
+  if(typeof renderMap==="function") renderMap();
   tickBarRAF=requestAnimationFrame(tickBarLoop); }
 function tickBarReset(){ const f=document.getElementById('tickBarFill'); if(f)f.style.width="0%"; if(tickBarRAF){cancelAnimationFrame(tickBarRAF);tickBarRAF=null;} }
 function tickBarStart(){ tickBarSince=Date.now(); if(!tickBarRAF) tickBarRAF=requestAnimationFrame(tickBarLoop); }
