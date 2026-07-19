@@ -1652,7 +1652,9 @@ function renderPanel(){
   if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
     const c=state.castle, br=buildRate();
     const tab=state.castleTab||"건물"; const busy=!!c.build;
-    h+=`<h3>🏰 성 내정 <span class="k">Lv.${c.level}</span></h3>`;
+    // 유저 피드백: 헤더가 탭과 무관하게 항상 "성 내정"이라, 출전 탭으로 이미 전환됐는데도 "계속 내정 패널만 뜬다"고 오해하기 쉬움 → 탭별 아이콘/이름 반영.
+    const CTAB_ICON={건물:"🏰",연구:"📚",선술집:"🍺",출전:"🚩",편성:"⭐",군주:"👑"};
+    h+=`<h3>${CTAB_ICON[tab]||"🏰"} ${tab==="건물"?"성 내정":tab} <span class="k">Lv.${c.level}</span></h3>`;
     const upkeep=Game.foodUpkeep(state), tt=Game.totalTroops(state);
     h+=`<div class="k">생산 ${br}/턴${br>1?' <span style="color:var(--gold)">(내정영웅)</span>':''} · 부대 ${Game.pArmyCount(state)}/${Game.armySlots(state)} · 병력 ${tt}${c.wall?` · 🧱${c.wall}`:""}</div>`;
     if(upkeep>0) h+=`<div class="k" style="font-size:11px${state.starving?';color:#fca5a5':''}">🍞 식량 유지비 ${upkeep}/턴${state.starving?" · ⚠ 고갈! 생산 중단 — 농장 증설/병력 감축":""}</div>`;
