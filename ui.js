@@ -308,6 +308,12 @@ function renderPanel(){
       }
     });
     if(draftTotal<=0) h+=`<div class="k" style="font-size:11px;margin-top:6px">저장하려면 먼저 "출전" 탭에서 편성을 만드세요.</div>`;
+    // 🤖 자동 출전(온라인) — 유저 요청: 자동 사냥/채집은 있는데 부대를 출전시키는 것까지 자동으로.
+    // 저장된 즐겨찾기 중 지금 갖춘 병력으로 채울 수 있는 걸 매턴 최대 1개씩 출전, 사냥·채집을 번갈아 배정.
+    const hasAnyPreset=(state.castle.presets||[]).some(Boolean);
+    h+=`<hr><div class="prodrow"><span class="nm">🤖 자동 출전 <span class="k">저장된 즐겨찾기로 매턴 자동 출전(사냥·채집 번갈아)</span></span>
+      <button class="minibtn" id="autoDeployToggle" style="${state.castle.autoDeploy?'background:var(--line);border-color:var(--green);color:var(--green)':''}" ${hasAnyPreset||state.castle.autoDeploy?"":"disabled"}>${state.castle.autoDeploy?"ON":"OFF"}</button></div>`;
+    if(!hasAnyPreset) h+=`<div class="k" style="font-size:11px">즐겨찾기 슬롯을 하나 이상 채워야 켤 수 있습니다.</div>`;
     } // ← 편성 탭 끝
     if(tab==="군주"){
     // F4: 군주(레벨/재능/장비) — 몬스터 처치로 얻은 경험치·재료·설계도로 성장.
@@ -520,6 +526,7 @@ function renderPanel(){
   p.querySelectorAll('[data-loadpreset]').forEach(b=>b.onclick=()=>loadPreset(+b.dataset.loadpreset));
   p.querySelectorAll('[data-savepreset]').forEach(b=>b.onclick=()=>savePreset(+b.dataset.savepreset));
   p.querySelectorAll('[data-clearpreset]').forEach(b=>b.onclick=()=>clearPreset(+b.dataset.clearpreset));
+  const adT=p.querySelector('#autoDeployToggle'); if(adT) adT.onclick=()=>{Game.setAutoDeploy(state,!state.castle.autoDeploy); toast(state.castle.autoDeploy?"🤖 자동 출전 켜짐":"자동 출전 꺼짐"); render();};
   const dep=p.querySelector('#deploy'); if(dep) dep.onclick=deploy;
   const cs=p.querySelector('#craftSiege'); if(cs) cs.onclick=craftSiege;
   const dcl=p.querySelector('#draftClear'); if(dcl) dcl.onclick=()=>{state.castle.draft={};render();};
@@ -708,6 +715,7 @@ function applySave(data){
   if(state.raid) state.raid.settled=state.raid.settled||false;   // 구버전 세이브 호환 — 고대성 점거 1회 발동 플래그
   state.ai=state.ai||{budget:0}; if(state.ai.lastWave==null)state.ai.lastWave=-99;   // 구버전 세이브 호환 — 웨이브 간격 추적
   state.castle.presets=state.castle.presets||[null,null,null];   // 구버전 세이브 호환 — 편성 즐겨찾기 3슬롯
+  if(state.castle.autoDeploy==null)state.castle.autoDeploy=false; state.castle.autoDeployNext=state.castle.autoDeployNext||"hunt";   // 구버전 세이브 호환 — 자동 출전
   state.rivals=state.rivals||Game.RIVALS.map(r=>({id:r.id,might:r.base})); state.rivalKills=state.rivalKills||0;   // 구버전 세이브 호환 — 라이벌 왕국(I1)
   state.rankSeason=state.rankSeason||{num:1,next:state.turn+Game.RANK_SEASON_LEN,score:0,bestRank:99,tierHist:[]};   // 구버전 세이브 호환 — 경쟁 시즌(I3)
   state.season=state.season||{count:1,next:state.turn+60,warnAt:state.turn+48,warned:false};   // 구버전 세이브 호환(B2)

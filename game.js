@@ -295,7 +295,7 @@
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
     turn:1, res:{식량:45,목재:45,석재:25,철:25},
-    castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},presets:[null,null,null],econ:{},wounded:{},wall:0,build:null,siegeItems:0},
+    castle:{level:1,queue:{},autoProduce:{},trainProg:{},buildings:["병영"],blevel:{병영:1},openBuilding:"병영",garrison:{중갑보병:5,창병:5,경기병:6},draft:{},presets:[null,null,null],autoDeploy:false,autoDeployNext:"hunt",econ:{},wounded:{},wall:0,build:null,siegeItems:0},
     research:{done:{},active:null,tab:"전투"}, ai:{budget:0,lastWave:-99},
     raid:{need:4,holder:null,holdTurns:0,cleared:false,settled:false}, subdue:0, xpItems:0, tavern:{built:false,pool:[]}, respawns:[],
     quests:{done:[],idx:0},   // 온보딩 퀘스트 진행(선형 체인 인덱스)
@@ -794,6 +794,24 @@
     const army=makeArmyFromDraft(g);
     if(target!=="P") orderMove(g,army.id,target);
     return {army, target:(target!=="P"&&army.dest)?target:null};}
+  // H-온라인 자동화: 자동 출전 — 저장된 편성 즐겨찾기(presets) 중 지금 갖춘 병력으로 채울 수 있는 걸 골라 매턴 최대 1개씩 자동 출전.
+  // 사냥/채집을 번갈아 배정(다음 배정 종류는 g.castle.autoDeployNext에 기록) — 유저 요청: "몬스터 자동은 있는데 출전까지도 알아서".
+  function setAutoDeploy(g,on){ g.castle.autoDeploy=!!on; return null; }
+  function autoDeployTick(g){
+    if(!g.castle.autoDeploy || !canAddArmy(g)) return null;
+    const presets=g.castle.presets||[];
+    for(const p of presets){ if(!p) continue;
+      const ok=Object.entries(p).every(([u,c])=>(g.castle.garrison[u]||0)>=c);
+      if(!ok) continue;
+      const savedDraft=g.castle.draft;   // 플레이어가 수동으로 편성 중이던 draft를 조용히 지우지 않게 보존
+      g.castle.draft={...p};
+      const army=makeArmyFromDraft(g);
+      g.castle.draft=savedDraft;
+      const mode=g.castle.autoDeployNext==="gather"?"gather":"hunt";
+      army[mode]=true;
+      g.castle.autoDeployNext=mode==="hunt"?"gather":"hunt";
+      return army; }
+    return null; }
   function disband(g,id){const a=findArmy(g,id);if(!a||a.node!=="P")return"성에서만 귀환 가능";
     for(const u in a.comp)g.castle.garrison[u]=(g.castle.garrison[u]||0)+a.comp[u]; if(a.hero)heroById(g,a.hero).loc="idle"; removeArmy(g,a); return null;}
 
@@ -1006,8 +1024,9 @@
     rivalTick(g);                    // I1: 라이벌 왕국 국력 성장(방치 시 추월)
     const seasonEvent=seasonTick(g); // 시즌형 침공(B2) — 예고/도래
     const factionEvents=factionTick(g);   // 다수 세력(B1) — 야생에서 습격대 등장
+    autoDeployTick(g);               // 자동 출전 — 편성 즐겨찾기로 새 부대 자동 창설(사냥/채집 번갈아 배정)
     assignGatherOrders(g);          // H1: 자동채집 부대에 자원지 지정
-    assignHuntOrders(g);            // G-A: 자동사냥 부대에 목표 지정(이동 전에 — 같은 틱에 출발)
+    assignHuntOrders(g);            // G-A: 자동사냥 부대에 목표 지정(이동 전에 — 같은 틱에 출발, 방금 출전한 부대도 포함)
     const mt=moveTick(g);            // 모든 부대(플레이어·AI) 한 틱 이동 + 접촉 전투(+세계이벤트)
     raidTick(g);
     g.turn++; tavernTick(g); processRespawns(g);
@@ -1083,7 +1102,7 @@
     dijkstra,pathTo,newGame,findArmy,armiesAt,heroById,troops,canAfford,hasR,pBaseMp,buildRate,castleBaseIncome,econIncome,gatherOf,income,researchMods,
     compArr,hasCombatHero,resolveBattle,defendCastle,checkVictory,raidTick,
     MOVE_TICKS,UNIT_GROUP,armyTicksPerTile,armySpeed,orderMove,stopMove,enterTile,moveTick,setHunt,armyPower,assignHuntOrders,assignGatherOrders,setGather,rallyToDefense,
-    produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,savePreset,loadPreset,clearPreset,makeArmyFromDraft,deploy,deployTo,disband,
+    produce,setAutoProduce,TRAIN_TICKS,construct,upgradeBuilding,levelUp,buildEcon,buildUniversity,startResearch,assignHero,draftAdjust,savePreset,loadPreset,clearPreset,setAutoDeploy,autoDeployTick,makeArmyFromDraft,deploy,deployTo,disband,
     buildTavern,rollCandidate,tavernTick,recruitHero,specialRecruit,
     playerCounterUnit,pickAIUnit,aiTurn,endTurn, QUESTS,questTick };
   if(typeof module!=="undefined"&&module.exports) module.exports=API; else global.Game=API;
