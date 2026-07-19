@@ -47,7 +47,8 @@
       border:1px solid var(--line);border-radius:10px;padding:8px;flex-direction:column;z-index:16;
       box-shadow:0 6px 16px rgba(0,0,0,.4);}
     .menu-drop.hidden{display:none;}
-    .sheet-handle{display:flex;margin:-12px -12px 8px;border-bottom:1px solid var(--line);}
+    .sheet-handle{display:flex;margin:-12px -12px 8px;border-bottom:1px solid var(--line);
+      position:sticky;top:0;background:var(--card);z-index:2;}   /* 유저 피드백: 내정 내용 스크롤 시 손잡이가 같이 밀려 올라가 빠져나갈 방법이 사라짐 → 상단 고정 */
     .qc{flex:1;min-width:0;text-align:center;font-size:11px;color:var(--dim);padding:9px 4px;
       cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-right:1px solid var(--line);}
     .qc:last-child{border-right:none;}
