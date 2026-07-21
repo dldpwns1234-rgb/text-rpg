@@ -146,11 +146,17 @@ function renderInfoAccordion(){
 // 유저 피드백: 지도에서 타일/부대를 탭할 때마다 시트가 78vh로 펼쳐져 지도를 가림 → 탭만으로는 더 이상 자동 펼침 없음(접힌 18vh 안에서
 // #panelBody가 자체 스크롤로 갱신됨). 큰 화면이 필요하면 퀵바(qcQuest/qcCastle)나 qcSel 토글을 사용자가 직접 눌러야 함(그쪽은 openSheet 유지).
 function renderPanel(){
-  const p=document.getElementById('panelBody'); const s=state.selected;
+  let p=document.getElementById('panelBody'); const s=state.selected;
   // 유저 피드백: "목표·마일스톤·위협 현황판이 문제" — 뭔가 선택돼 있으면 그 화면이 우선이라, 아무것도 선택 안 됐을 때만 현황 아코디언 표시.
   // 목표/마일스톤/위협은 여전히 qcQuest 퀵바(selected=null로 세팅 후 열림)로 언제든 접근 가능.
   let h=s?"":renderInfoAccordion();
-  if(s?.kind==="node" && NODES[s.id].type==="castle" && NODES[s.id].owner==="P"){
+  // 유저 요청: 내정이 지도 옆(패널)에 끼어있지 않고, 실제 아발론처럼 별도의 전체화면으로 분리.
+  // #castleScreen이 있으면(신버전 템플릿) 성 내정 콘텐츠를 거기로 돌린다 — 아래 로직/바인딩은 전부 동일, 변수 p가 가리키는 대상만 바뀜.
+  const inCastle = s?.kind==="node" && NODES[s.id] && NODES[s.id].type==="castle" && NODES[s.id].owner==="P";
+  const castleScreen=document.getElementById('castleScreen');
+  if(castleScreen) castleScreen.classList.toggle('open', inCastle);
+  if(inCastle){
+    const csBody=document.getElementById('castleScreenBody'); if(csBody) p=csBody;
     const c=state.castle, br=buildRate();
     const tab=state.castleTab||"건물"; const busy=!!c.build;
     // 유저 피드백: 헤더가 탭과 무관하게 항상 "성 내정"이라, 출전 탭으로 이미 전환됐는데도 "계속 내정 패널만 뜬다"고 오해하기 쉬움 → 탭별 아이콘/이름 반영.
@@ -498,6 +504,7 @@ function renderPanel(){
   }
   } // ← 영웅·드래곤 관리 접이식 끝
   p.innerHTML=h;
+  const closeCS=document.getElementById('closeCastleScreen'); if(closeCS) closeCS.onclick=()=>{state.selected=null;state.pendingMove=null;state.mode="normal";render();};
   // 핸들러
   const infoT=p.querySelector('#infoToggle'); if(infoT) infoT.onclick=()=>{state.infoOpen=!(state.infoOpen!==false);render();};
   const compT=p.querySelector('#compToggle'); if(compT) compT.onclick=()=>{state.compOpen=!(state.compOpen===true);render();};
