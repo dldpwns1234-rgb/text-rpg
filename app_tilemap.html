@@ -68,6 +68,19 @@
   .castle-screen-head b{font-size:15px;}
   .castle-screen-body{max-width:640px;margin:0 auto;padding:14px;font-size:13px;}
   .castle-screen-body h3{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between;}
+  /* 유저 요청: 글자 탭 한 줄 대신 아이콘 그리드(전체화면이라 공간 여유) */
+  .ctabgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:8px 0;}
+  .ctabcell{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;
+    background:var(--card2);border:1px solid var(--line);border-radius:8px;color:var(--txt);font-size:9px;cursor:pointer;}
+  .ctabcell .ci{font-size:18px;}
+  /* 유저 요청: 건물 세로 리스트 대신 2열 카드 그리드 */
+  .bldgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:8px;}
+  .bldcard{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px;}
+  .bldcard.open{border-color:var(--gold);}
+  .bldcard-head{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    background:none;border:none;color:var(--txt);padding:0;width:100%;text-align:left;cursor:pointer;}
+  .bldcard-head .bi{font-size:20px;} .bldcard-head .bn{font-size:12px;}
+  .bldcard-btn{width:100%;margin-top:2px;}
   .k{color:var(--dim);}
   .edge{stroke:#334155;stroke-width:3;}
   .reach{stroke:var(--green);stroke-width:3;stroke-dasharray:5 4;fill:none;opacity:.9;}

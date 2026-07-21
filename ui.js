@@ -169,9 +169,9 @@ function renderPanel(){
       h+=`<div class="queue" style="font-size:11px">대기열(${qAll.length}): ${qAll.length?qAll.map(unitLabel).join(", "):"—"}</div>`; }
     {const wnd=state.castle.wounded, wTot=Object.values(wnd).reduce((x,y)=>x+y,0);
      if(wTot>0) h+=`<div style="color:#fca5a5;font-size:12px">🩹 부상자 ${wTot} <span class="k">(병원 ${(state.castle.econ["병원"]||0)*3}/턴 치료)</span></div>`;}
-    // 탭 바
-    h+=`<div style="display:flex;gap:4px;margin:7px 0">`;
-    for(const t of ["건물","연구","선술집","출전","편성","군주"]) h+=`<button class="minibtn" data-ctab="${t}" style="flex:1;${tab===t?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${t}</button>`;
+    // 탭 바 — 유저 요청: 글자 탭 한 줄 대신 아이콘 그리드(전체화면이라 공간 여유 있음)
+    h+=`<div class="ctabgrid">`;
+    for(const t of ["건물","연구","선술집","출전","편성","군주"]) h+=`<button class="ctabcell" data-ctab="${t}" style="${tab===t?'border-color:var(--gold);color:var(--gold);':''}"><span class="ci">${CTAB_ICON[t]}</span><span class="cl">${t}</span></button>`;
     h+=`</div>`;
     if(tab==="건물"){
     if(busy){const pct=Math.round(100*(c.build.total-c.build.left)/c.build.total);
@@ -186,26 +186,33 @@ function renderPanel(){
       h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall")}턴</span></span>
         <span class="cost">${Object.entries(wc).map(([r,v])=>r[0]+v).join(" ")}</span>
         <button class="minibtn" data-wall="1" ${wl<wMax&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
-    h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(클릭해 열기 · 레벨 = 최대 티어)</span></div>`;
+    h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(탭해 열기 · 레벨 = 최대 티어)</span></div>`;
+    // 유저 요청: 세로 리스트 대신 2열 카드 그리드(전체화면 안이라 넓게 써도 됨)
+    h+=`<div class="bldgrid">`;
     for(const key in BUILDINGS){const b=BUILDINGS[key];
       if(c.buildings.includes(key)){
         const open=c.openBuilding===key, lv=c.blevel[key]||1;
-        h+=`<div class="prodrow"><button class="minibtn" data-bld="${key}" style="${open?'background:var(--line);border-color:var(--gold);color:var(--gold);':''}">${b.icon} ${key} <span class="k">Lv.${lv} · T${lv}</span></button>`;
         const cap=Game.tierCap(state);
+        h+=`<div class="bldcard${open?' open':''}">
+          <button class="bldcard-head" data-bld="${key}"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">Lv.${lv} · T${lv}</span></button>`;
         if(lv<cap){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
-          h+=`<span class="cost">${cs}·${Game.buildDur("bld")}T</span><button class="minibtn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
-        } else h+=`<span class="k" style="font-size:11px">최대 T${cap}${cap<TIER_MAX?" (마일스톤 해금 필요)":""}</span>`;
-        h+=`</div>`;
+          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("bld")}T</div>
+            <button class="minibtn bldcard-btn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
+        } else h+=`<div class="k" style="font-size:10px;margin:3px 0">최대 T${cap}${cap<TIER_MAX?" (마일스톤 필요)":""}</div>`;
         // F1: 병영마다 독립 큐 — 이 건물 대기열만 따로 표시(동시 훈련 체감)
         const bq=c.queue[key]||[];
-        if(bq.length) h+=`<div class="k" style="font-size:10px;padding-left:4px">　⏳ ${bq.map(unitLabel).join(", ")}</div>`;
+        if(bq.length) h+=`<div class="k" style="font-size:9px">⏳ ${bq.length}개 대기</div>`;
+        h+=`</div>`;
       } else {
         const cs=Object.entries(b.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
-        h+=`<div class="prodrow"><span class="nm">${b.icon} ${key} <span class="k">미건설</span></span>
-          <span class="cost">${cs}·${Game.buildDur("construct")}T</span>
-          <button class="minibtn" data-construct="${key}" ${canAfford(b.cost)&&!busy?"":"disabled"}>건설</button></div>`;
+        h+=`<div class="bldcard">
+          <div class="bldcard-head" style="opacity:.7"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">미건설</span></div>
+          <div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("construct")}T</div>
+          <button class="minibtn bldcard-btn" data-construct="${key}" ${canAfford(b.cost)&&!busy?"":"disabled"}>건설</button>
+        </div>`;
       }
     }
+    h+=`</div>`;
     const ob=c.openBuilding;
     if(ob && c.buildings.includes(ob)){
       const lv=c.blevel[ob]||1;
