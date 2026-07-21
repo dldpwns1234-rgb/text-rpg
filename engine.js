@@ -10,14 +10,19 @@
 
 const CONST = { FLOOR:0.15, FALLBACK:0.85, SPEC_MULT:1.4, SPLIT:0.6, COUNTER_MULT:2.0, HERO_BUFF:0.20,
   BATTLE_ROUNDS:40 };  // 게임·검증 공용 전투 라운드 캡. HP×1.0에서 전투는 ~30R에 결착 → 40R이면 무승부 소멸. game.js/verify.js가 이 값을 참조(드리프트 방지).
+// King of Avalon §14 참조: 6유닛 그대로, 각 계열이 정확히 한 상대에게 강한 "1:1 지정 카운터"로 세분화(2026-07-21).
+// 경기병→궁병(gen_ab deep=back)·장궁병→기병(gen_am deep=mid)은 기존 행 타겟팅으로 이미 반영돼 있어 그대로 둠.
+const SPEAR_COUNTER_MULT = {경기병:2.0, 중기병:1.2};   // 창병 요격: 경기병엔 강하게, 중기병(중장)엔 상대적으로 약하게
+const PREFERRED_TARGET = {석궁병:"창병", 중기병:"중갑보병"};   // spec 특화: 지정 대상엔 SPEC_MULT, 아니면 보너스 없음
+const TANK_ARCHER_RESIST = 0.75;   // 중갑보병(전사): 궁병(후열) 공격에 -25% 피해 — tank는 항상 최전열만 때리는 구조라 공격측 보너스 대신 방어 저항으로 구현
 
 const UNITS = {
-  "중갑보병":{hp:120,atk:8, df:12,proc:0.0, row:"front",kind:"tank",  desc:"방어 탱커"},
-  "창병":   {hp:100,atk:12,df:6, proc:0.55,row:"front",kind:"spear", desc:"대기병 요격"},
-  "장궁병": {hp:65, atk:16,df:3, proc:0.35,row:"back", kind:"gen_am",desc:"범용(앞+중)"},
-  "석궁병": {hp:60, atk:16,df:3, proc:0.0, row:"back", kind:"spec",  desc:"대보병 특화"},
-  "경기병": {hp:95, atk:17,df:5, proc:0.45,row:"mid",  kind:"gen_ab",desc:"범용(앞+뒤)"},
-  "중기병": {hp:105,atk:12,df:8, proc:0.0, row:"mid",  kind:"spec",  desc:"대보병 돌격"},
+  "중갑보병":{hp:120,atk:8, df:12,proc:0.0, row:"front",kind:"tank",  desc:"방어 탱커(대궁병 저항)"},
+  "창병":   {hp:100,atk:12,df:6, proc:0.55,row:"front",kind:"spear", desc:"대경기병 요격"},
+  "장궁병": {hp:65, atk:16,df:3, proc:0.35,row:"back", kind:"gen_am",desc:"범용(앞+중), 대기병"},
+  "석궁병": {hp:60, atk:16,df:3, proc:0.0, row:"back", kind:"spec",  desc:"대창병 특화"},
+  "경기병": {hp:95, atk:17,df:5, proc:0.45,row:"mid",  kind:"gen_ab",desc:"범용(앞+뒤), 대궁병"},
+  "중기병": {hp:105,atk:12,df:8, proc:0.0, row:"mid",  kind:"spec",  desc:"대중갑보병 돌격"},
   // ===== 몬스터 (PvE 전용, 밸런스 검증 대상 아님 — verify.js가 NAMES에서 monster:true를 걸러냄) =====
   // E2(개성 부여): 전부 kind:"tank"(맹목적 전열 공격)였던 걸 하피·오우거만 기존 kind 체계(범용/특화)로 갈라
   // "숫자만 큰 늑대" 느낌을 깨뜨림 — 새 메커니즘 추가가 아니라 플레이어 유닛에도 쓰는 기존 kind를 재사용(리스크 최소).
@@ -63,9 +68,12 @@ function planAttacks(att, enemy, ev){
     const a=aliveCount(s), base=s.atk, k=s.kind;
     if(a<=0) continue;
     if(k==="tank"||k==="spear"){ const t=frontmost(enemy); if(t) A.push([t,base,a,s]); }
-    else if(k==="spec"){ let t=rowTarget(enemy,"front");
-      if(t) A.push([t,base*CONST.SPEC_MULT,a,s]);
-      else { t=frontmost(enemy); if(t) A.push([t,base*CONST.FALLBACK,a,s]); } }
+    else if(k==="spec"){ const pref=PREFERRED_TARGET[s.name];
+      const exact = pref ? enemy.front.filter(x=>!dead(x)&&x.name===pref)[0] : null;
+      if(exact) A.push([exact,base*CONST.SPEC_MULT,a,s]);          // 지정 카운터: 아발론식 특화 보너스
+      else { const t=rowTarget(enemy,"front");
+        if(t) A.push([t,base,a,s]);                                 // 전열에 있지만 지정 대상 아님: 보너스 없음
+        else { const t2=frontmost(enemy); if(t2) A.push([t2,base*CONST.FALLBACK,a,s]); } } }
     else { const deep = k==="gen_am"?"mid":"back";
       if(Math.random()<s.proc){ const d=rowTarget(enemy,deep);
         if(d){ const ft=frontmost(enemy); A.push([ft,base*CONST.SPLIT,a,s]); A.push([d,base*CONST.SPLIT,a,s]); if(ev) ev.proc++; }
@@ -84,13 +92,18 @@ function resolveRound(A,B,ev){
       if(t.row==="front"){                       // ② 전열 피해 분산
         const fs=def.front.filter(s=>!dead(s));
         let tot=fs.reduce((x,s)=>x+aliveCount(s),0);
-        if(tot<=0) add(t,amount); else for(const s of fs) add(s, amount*aliveCount(s)/tot);
+        if(tot<=0) add(t,amount); else for(const s of fs){
+          let share=amount*aliveCount(s)/tot;
+          if(s.name==="중갑보병" && src.row==="back") share*=TANK_ARCHER_RESIST;   // 전사는 궁병에 강함(방어 저항)
+          add(s, share);
+        }
       } else add(t, amount);
-      if(src.row==="mid" && t.row==="front"){     // 창병 요격
+      if(src.row==="mid" && t.row==="front"){     // 창병 요격 — 경기병엔 강하게, 중기병엔 약하게
+        const cmul=SPEAR_COUNTER_MULT[src.name]||CONST.COUNTER_MULT;
         for(const sp of spearsFront(def)){
           let nc=0, eng=aliveCount(sp);
           for(let i=0;i<eng;i++) if(Math.random()<sp.proc) nc++;
-          if(nc>0){ add(src, nc*dmg(sp.atk*CONST.COUNTER_MULT, src.df)); if(ev) ev.counter+=nc; }
+          if(nc>0){ add(src, nc*dmg(sp.atk*cmul, src.df)); if(ev) ev.counter+=nc; }
         }
       }
     }
