@@ -154,7 +154,12 @@ function renderPanel(){
   // #castleScreen이 있으면(신버전 템플릿) 성 내정 콘텐츠를 거기로 돌린다 — 아래 로직/바인딩은 전부 동일, 변수 p가 가리키는 대상만 바뀜.
   const inCastle = s?.kind==="node" && NODES[s.id] && NODES[s.id].type==="castle" && NODES[s.id].owner==="P";
   const castleScreen=document.getElementById('castleScreen');
-  if(castleScreen) castleScreen.classList.toggle('open', inCastle);
+  if(castleScreen){
+    castleScreen.classList.toggle('open', inCastle);
+    // 유저 요청: 상단바(자원/저장/재생/한틱)는 내정 화면에서도 계속 보이고 눌려야 함 — .top이 castle-screen보다
+    // 위 z-index로 남아있으므로(CSS), 겹치지 않게 castle-screen을 상단바 실측 높이만큼 아래로 내림(모바일 줄바꿈 등 가변 높이 대응).
+    if(inCastle){ const topEl=document.querySelector('.top'); castleScreen.style.top=(topEl?topEl.getBoundingClientRect().height:0)+"px"; }
+  }
   if(inCastle){
     const csBody=document.getElementById('castleScreenBody'); if(csBody) p=csBody;
     const c=state.castle, br=buildRate();

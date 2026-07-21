@@ -11,7 +11,7 @@
   body{margin:0;background:var(--bg);color:var(--txt);
     font-family:-apple-system,"Malgun Gothic",system-ui,sans-serif;padding:12px;line-height:1.4;font-size:14px;}
   h1{font-size:18px;margin:0 0 8px;}
-  .top{position:relative;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
+  .top{position:sticky;top:0;z-index:19;display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);
     border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px;}
   .resbar{display:flex;gap:6px;flex-wrap:wrap;}
   .res{display:flex;gap:6px;align-items:center;background:var(--bg);border:1px solid var(--line);
@@ -60,8 +60,10 @@
   }
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:13px;}
   .panel h3{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between;}
-  /* 유저 요청: 내정을 지도 옆 패널이 아니라 실제 아발론처럼 별도 전체화면으로 — 지도·패널을 전부 덮는 오버레이. */
-  .castle-screen{display:none;position:fixed;inset:0;z-index:18;background:var(--bg);overflow-y:auto;}
+  /* 유저 요청: 내정을 지도 옆 패널이 아니라 실제 아발론처럼 별도 전체화면으로 — 지도·패널을 전부 덮는 오버레이.
+     상단바(자원/저장/재생/한틱)는 유저 요청으로 내정 화면에서도 계속 보이고 눌려야 해서, .top이 더 높은 z-index로
+     그 위에 남고 castle-screen은 top을 상단바 실측 높이만큼 JS(renderPanel)에서 내려서 겹치지 않게 함. */
+  .castle-screen{display:none;position:fixed;left:0;right:0;bottom:0;top:0;z-index:18;background:var(--bg);overflow-y:auto;}
   .castle-screen.open{display:block;}
   .castle-screen-head{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;
     padding:10px 14px;background:var(--card);border-bottom:1px solid var(--line);}
@@ -1716,7 +1718,12 @@ function renderPanel(){
   // #castleScreen이 있으면(신버전 템플릿) 성 내정 콘텐츠를 거기로 돌린다 — 아래 로직/바인딩은 전부 동일, 변수 p가 가리키는 대상만 바뀜.
   const inCastle = s?.kind==="node" && NODES[s.id] && NODES[s.id].type==="castle" && NODES[s.id].owner==="P";
   const castleScreen=document.getElementById('castleScreen');
-  if(castleScreen) castleScreen.classList.toggle('open', inCastle);
+  if(castleScreen){
+    castleScreen.classList.toggle('open', inCastle);
+    // 유저 요청: 상단바(자원/저장/재생/한틱)는 내정 화면에서도 계속 보이고 눌려야 함 — .top이 castle-screen보다
+    // 위 z-index로 남아있으므로(CSS), 겹치지 않게 castle-screen을 상단바 실측 높이만큼 아래로 내림(모바일 줄바꿈 등 가변 높이 대응).
+    if(inCastle){ const topEl=document.querySelector('.top'); castleScreen.style.top=(topEl?topEl.getBoundingClientRect().height:0)+"px"; }
+  }
   if(inCastle){
     const csBody=document.getElementById('castleScreenBody'); if(csBody) p=csBody;
     const c=state.castle, br=buildRate();
