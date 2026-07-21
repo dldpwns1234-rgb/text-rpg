@@ -31,7 +31,7 @@ const NAMES = Object.keys(UNITS);
 const ROWS  = ["front","mid","back"];
 const ROWKO = {front:"앞 · 보병", mid:"중 · 기병", back:"뒤 · 궁병"};
 
-const tierMult = t => 1 + (t-1)*0.15;
+const tierMult = t => Math.pow(1.28, t-1);   // 아발론 참조: 티어당 선형+15%→복리×1.28로 가팔라짐(T5 1.60배→2.68배). costOf도 같이 올려 상쇄(game.js).
 const dmg = (a,d) => Math.max(a*CONST.FLOOR, a-d);
 
 function makeArmy(comp, hero, mods){    // mods: {유닛명:{atk,df,hp}} 병종별 스탯 배율(연구)

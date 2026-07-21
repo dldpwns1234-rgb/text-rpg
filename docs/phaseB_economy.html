@@ -192,7 +192,7 @@ const NAMES = Object.keys(UNITS);
 const ROWS  = ["front","mid","back"];
 const ROWKO = {front:"앞 · 보병", mid:"중 · 기병", back:"뒤 · 궁병"};
 
-const tierMult = t => 1 + (t-1)*0.15;
+const tierMult = t => Math.pow(1.28, t-1);   // 아발론 참조: 티어당 선형+15%→복리×1.28로 가팔라짐(T5 1.60배→2.68배). costOf도 같이 올려 상쇄(game.js).
 const dmg = (a,d) => Math.max(a*CONST.FLOOR, a-d);
 
 function makeArmy(comp, hero, mods){    // mods: {유닛명:{atk,df,hp}} 병종별 스탯 배율(연구)
@@ -433,10 +433,15 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const baseOf=k=>{const i=k.indexOf("@T");return i<0?k:k.slice(0,i);};
   const tierOf=k=>{const i=k.indexOf("@T");return i<0?1:(+k.slice(i+2)||1);};
   const unitLabel=k=>{const t=tierOf(k);return t>1?baseOf(k)+" T"+t:baseOf(k);};
-  // 고티어 = 비용↑, 특히 철(기획서: 고티어 철 병목). T2 ×1.6, T3 ×2.4 + 티어당 철 추가
-  function costOf(name,tier){tier=tier||1;const base=UNIT_COST[name],mul=1+0.6*(tier-1),c={};
-    for(const r in base)c[r]=Math.round(base[r]*mul);c.철=(c.철||0)+2*(tier-1);return c;}
-  const CASTLE_UP_COST={목재:20,석재:15,철:10};
+  // 고티어 = 비용↑, 특히 철(기획서: 고티어 철 병목). 아발론 참조: engine.tierMult을 복리(×1.28)로 가파르게 바꾸면서
+  // 여기도 같이 복리(×1.55)로 올려 "고티어=스탯은 세지만 자원 대비 비효율" 비율(T5 기준 구값 1.60/3.4≈0.47)을 그대로 보존.
+  function costOf(name,tier){tier=tier||1;const base=UNIT_COST[name],mul=Math.pow(1.55,tier-1),c={};
+    for(const r in base)c[r]=Math.round(base[r]*mul);c.철=(c.철||0)+Math.round(2*(tier-1)*mul);return c;}
+  // 성 레벨업 비용: 기존엔 레벨 무관 고정값이었음 → 아발론 참조로 레벨당 복리(×1.32) 성장 함수화(레벨1은 구값과 동일, 명시적 상한 없이 자연 소프트캡).
+  const CASTLE_UP_BASE={목재:20,석재:15,철:10}, CASTLE_LV_GROWTH=1.32;
+  function castleUpCost(level){ level=level||1; const mul=Math.pow(CASTLE_LV_GROWTH, level-1), c={};
+    for(const r in CASTLE_UP_BASE) c[r]=Math.round(CASTLE_UP_BASE[r]*mul);
+    c.철=(c.철||0)+Math.round(3*(level-1)); return c; }
   const SIEGE_COST={목재:30,철:40};   // 파성추(C3) — 신규 유닛 아닌 소모성 제작품. 공성 시 성벽 보정을 추가로 완화(엔진 밸런스 무영향).
   const BUILDINGS={ "병영":{cost:{목재:15,석재:10,철:5},units:["중갑보병","창병"],icon:"🛡"},
     "궁수대":{cost:{목재:15,석재:5,철:10},units:["장궁병","석궁병"],icon:"🏹"},
@@ -572,19 +577,32 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     ],
   };
   // 교체 가능한 현재 맵 (let → 클로저가 항상 최신 참조). setMap 으로 노드↔타일 전환.
-  let NODES, EDGES, ADJ, MONSTERS, MSPAWN;
+  let NODES, EDGES, ADJ, MONSTERS, MSPAWN, GRID_BOUNDS;
   function setMap(m){ NODES=m.NODES; EDGES=m.EDGES; MONSTERS=m.MONSTERS||[]; MSPAWN=m.spawn||null;
     ADJ={}; for(const id in NODES) ADJ[id]=[];
     for(const[a,b,c]of EDGES){ADJ[a].push({to:b,cost:c});ADJ[b].push({to:a,cost:c});}
+    // King of Avalon 참조(맵 확장+중심 편향 티어): 그리드 좌표(gx/gy)가 있는 노드맵(타일맵)만 경계를 계산 —
+    // 구버전 노드그래프(DEFAULT_MAP)는 gx/gy가 없어 GRID_BOUNDS=null → 중심편향 완전 비활성(하위호환 보장).
+    const gxs=[],gys=[]; for(const id in NODES){const n=NODES[id]; if(n.gx!==undefined){gxs.push(n.gx);gys.push(n.gy);}}
+    GRID_BOUNDS = gxs.length ? {cx:(Math.min(...gxs)+Math.max(...gxs))/2, cy:(Math.min(...gys)+Math.max(...gys))/2,
+      halfW:(Math.max(...gxs)-Math.min(...gxs))/2||1, halfH:(Math.max(...gys)-Math.min(...gys))/2||1} : null;
     if(typeof API!=="undefined"&&API){ API.NODES=NODES; API.EDGES=EDGES; API.ADJ=ADJ; API.MONSTERS=MONSTERS; } // 노출 참조 갱신
     return API; }
   setMap(DEFAULT_MAP);
-  // 랜덤 스폰(타일 맵): 성/인접이 아닌 빈 평지 타일에 몬스터 배치
+  // 랜덤 스폰(타일 맵): 성/인접이 아닌 빈 평지 타일에 몬스터·자원 배치(둘 다 공유하는 후보 필터)
   const randomTile=g=>{const cands=Object.keys(NODES).filter(id=>NODES[id].type==="plain"&&!g.armies.some(a=>a.node===id)&&!ADJ[id].some(n=>NODES[n.to].type==="castle"));
     return cands.length?cands[Math.floor(Math.random()*cands.length)]:null;};
-  function spawnRoamer(g,tmpl){const node=randomTile(g); if(!node)return null;
-    const a={id:"MON"+(g._nid++),side:"M",node,mp:0,maxMp:0,name:tmpl.name,mtier:tmpl.mtier,comp:scaleComp(tmpl.comp,monsterScale(g)),hero:null,reward:{...tmpl.reward},roamer:true};
-    g.armies.push(a); return a;}
+  // 중심 편향(King of Avalon 참조): 체비셰프 정규화 거리 0(정중앙)~1(가장자리). 그리드 없는 맵은 0.5(중립) 반환.
+  function tileDistNorm(id){ if(!GRID_BOUNDS) return 0.5;
+    const n=NODES[id]; if(!n||n.gx===undefined) return 0.5;
+    const dx=Math.abs(n.gx-GRID_BOUNDS.cx)/GRID_BOUNDS.halfW, dy=Math.abs(n.gy-GRID_BOUNDS.cy)/GRID_BOUNDS.halfH;
+    return Math.min(1, Math.max(dx,dy)); }
+  const TIER_WEIGHTS_BASE=[40,25,15,10,5];   // T1~T5 기본 희소성(정중앙에서도 T5는 T1보다 8배 희귀)
+  const TIER_BIAS_K=1.5;                     // 거리에 따른 감쇠 강도 — 가장자리로 갈수록 고티어 급격히 희귀해짐
+  function pickTierByDistance(distNorm){
+    const w=TIER_WEIGHTS_BASE.map((base,i)=>base*Math.pow(1-distNorm, TIER_BIAS_K*i));
+    const sum=w.reduce((a,b)=>a+b,0), r=Math.random()*sum; let acc=0;
+    for(let i=0;i<w.length;i++){ acc+=w[i]; if(r<=acc) return i+1; } return 1; }
   function dijkstra(start,maxCost){const dist={[start]:0},prev={},pq=[[0,start]];
     while(pq.length){pq.sort((x,y)=>x[0]-y[0]);const[d,u]=pq.shift();if(d>dist[u])continue;
       for(const{to,cost}of ADJ[u]){const nd=d+cost;if(nd<=maxCost&&(dist[to]===undefined||nd<dist[to])){dist[to]=nd;prev[to]=u;pq.push([nd,to]);}}}
@@ -597,6 +615,50 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     comp:scaleComp(t.comp, (g?monsterScale(g):1)*(extraMult||1)), hero:null,reward:{...t.reward}});
   // ANCIENT 몬스터 템플릿: 타일맵(MSPAWN.raid)·노드맵(MONSTERS 배열) 양쪽 다 지원 — 월드 보스 재등장(B4)이 맵 종류와 무관하게 동작하도록.
   const ancientTemplate=()=>{ if(MSPAWN&&MSPAWN.raid) return {node:"ANCIENT",...MSPAWN.raid}; return MONSTERS.find(m=>m.node==="ANCIENT")||null; };
+
+  // ---- King of Avalon 참조: 몬스터 티어(1~5) — 자원 타일과 동일한 5단계·중심편향 축 공유 ----
+  // 기존 5종(늑대/고블린/오크/하피/오우거, engine.js 변경 없음)을 재사용, uk()로 comp 키에 티어를 굽는다(예:"오크@T3").
+  // mtier(사냥/토벌/레이드)는 티어에서 파생 — 기존 보상 테이블(XP_REWARD 등, 전부 이 3라벨 키)은 변경 없이 그대로 재사용.
+  const MONSTER_TIERS=[
+    {tier:1, mtier:"사냥", variants:[
+      {name:"늑대 무리",     comp:{늑대:10},              reward:{식량:20,목재:15}},
+      {name:"들개 무리",     comp:{늑대:6,고블린:4},       reward:{식량:18,철:10}} ]},
+    {tier:2, mtier:"사냥", variants:[
+      {name:"고블린 약탈대", comp:{고블린:14},             reward:{식량:24,목재:18}},
+      {name:"도적 무리",     comp:{고블린:8,늑대:6},       reward:{식량:22,철:14}} ]},
+    {tier:3, mtier:"토벌", variants:[
+      {name:"오크 전투대",   comp:{오크:8,하피:4},         reward:{철:38,석재:26,식량:26}},
+      {name:"고블린 소굴",   comp:{오크:6,하피:6,고블린:6}, reward:{철:34,석재:24,식량:24}} ]},
+    {tier:4, mtier:"토벌", variants:[
+      {name:"오크 정예대",   comp:{오크:10,오우거:3,하피:5}, reward:{철:46,목재:32,석재:28}} ]},
+    {tier:5, mtier:"레이드", variants:[
+      {name:"고대 파수병",   comp:{오우거:6,오크:10,하피:6}, reward:{철:60,석재:44,식량:44}} ]},
+  ];
+  const tieredComp=(comp,tier)=>tier<=1?{...comp}:Object.fromEntries(Object.entries(comp).map(([k,v])=>[uk(k,tier),v]));
+  function monsterTemplateFor(tier){ const t=MONSTER_TIERS[Math.max(0,Math.min(4,tier-1))]; return t.variants[Math.floor(Math.random()*t.variants.length)]; }
+  // 랜덤 스폰(타일맵 전용): 뽑힌 타일의 중심거리로 먼저 티어를 정하고, 그 티어의 변형 템플릿을 고름 — pool 인자 제거(내부 자체 결정).
+  function spawnRoamer(g){ const node=randomTile(g); if(!node) return null;
+    const tier=pickTierByDistance(tileDistNorm(node)), tmpl=monsterTemplateFor(tier);
+    const a={id:"MON"+(g._nid++),side:"M",node,mp:0,maxMp:0,name:tmpl.name,mtier:tmpl.mtier,tier,
+      comp:scaleComp(tieredComp(tmpl.comp,tier), monsterScale(g)), hero:null, reward:{...tmpl.reward}, roamer:true};
+    g.armies.push(a); return a; }
+
+  // ---- King of Avalon 참조: 자원 타일 티어(1~5) + 고갈 + 재등장 — "야생" 타일 전용(집 근처 고정 8타일은 무한 산출 그대로) ----
+  const RES_TIER_YIELD=[6,10,16,26,42];             // T1=기존 GATHER_BASE와 연속성. 이후 ~1.6배/단계(아발론 Gather 표 §8-1 참조)
+  const RES_TIER_CAP=RES_TIER_YIELD.map(y=>y*12);   // 완전 소진까지 상주 채집 기준 약 12턴
+  const RESPAWN_DELAY_RES=10;                       // 몬스터 둥지(8턴)보다 살짝 느긋한 경제형 재생성
+  function plantResourceTile(id){ const tier=pickTierByDistance(tileDistNorm(id));
+    const res=RES[Math.floor(Math.random()*RES.length)], cap=RES_TIER_CAP[tier-1], g0=NODES[id];
+    NODES[id]={name:{식량:"야생 곡창",목재:"야생 삼림",석재:"야생 채석장",철:"야생 철광"}[res],
+      type:"resource", res, tier, cap, remaining:cap, gx:g0.gx, gy:g0.gy}; }
+  function seedWildResources(g,count){ for(let i=0;i<count;i++){ const id=randomTile(g); if(id) plantResourceTile(id); } }
+  function respawnResourceTile(g){ const id=randomTile(g);
+    if(!id){ (g.respawns=g.respawns||[]).push({resTile:true,at:g.turn+2}); return; }   // 빈 평지 없음 → 재시도 지연
+    plantResourceTile(id); }
+  function depleteTile(g,nodeId,amt){ const n=NODES[nodeId]; if(!n||n.remaining===undefined) return;   // 고정 타일=no-op(하위호환)
+    n.remaining=Math.max(0,n.remaining-amt);
+    if(n.remaining<=0){ NODES[nodeId]={name:"",type:"plain",gx:n.gx,gy:n.gy};
+      (g.respawns=g.respawns||[]).push({resTile:true, at:g.turn+RESPAWN_DELAY_RES}); } }
 
   // ---- 상태 ----
   function _baseGame(){ if(NODES.ANCIENT)NODES.ANCIENT.owner=null; return {
@@ -621,8 +683,9 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     ], over:false, winner:null, _nid:1000 };
   }
   function newGame(){ const g=_baseGame();
-    if(MSPAWN){ for(let i=0;i<(MSPAWN.count||4);i++) spawnRoamer(g, MSPAWN.pool[i%MSPAWN.pool.length]);
-      if(MSPAWN.raid && NODES.ANCIENT) g.armies.push(mkMonster({node:"ANCIENT",...MSPAWN.raid},g)); }
+    if(MSPAWN){ for(let i=0;i<(MSPAWN.count||4);i++) spawnRoamer(g);
+      if(MSPAWN.raid && NODES.ANCIENT) g.armies.push(mkMonster({node:"ANCIENT",...MSPAWN.raid},g));
+      if(MSPAWN.wildResCount) seedWildResources(g, MSPAWN.wildResCount); }
     else for(const m of MONSTERS) g.armies.push(mkMonster(m,g));
     return g;
   }
@@ -662,9 +725,13 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     for(const k in ECON_BUILDINGS){const b=ECON_BUILDINGS[k],n=g.castle.econ[k]||0;if(b.res&&n)inc[b.res]+=Math.round(b.amt*n*mult);}return inc;}
   function gatherOf(g,a){const n=NODES[a.node];if(a.side!=="P"||n.type!=="resource")return null;
     const hero=a.hero&&heroById(g,a.hero); const isCity=hero&&hero.type==="내정";
-    const base=GATHER_BASE+(hasR(g,"채굴법")?2:0)+(hasR(g,"정밀 채굴")?2:0);
+    // King of Avalon 참조: 야생 타일(n.tier 존재)은 티어별 산출량, 집 근처 고정 타일은 기존 GATHER_BASE 그대로(하위호환).
+    const tierBase=n.tier?RES_TIER_YIELD[n.tier-1]:GATHER_BASE;
+    const base=tierBase+(hasR(g,"채굴법")?2:0)+(hasR(g,"정밀 채굴")?2:0);
     const mult=isCity?GRADE_GATHER[hero.grade]+traitSum(hero,"gatherBonus"):1;
-    return {res:n.res,amt:Math.round(base*mult)};}
+    let amt=Math.round(base*mult);
+    if(n.remaining!==undefined) amt=Math.min(amt,n.remaining);   // 고갈 직전엔 남은 만큼만
+    return {res:n.res,amt};}
   // 총 병력(주둔군 + 아군 부대) → 식량 유지비
   const totalTroops=g=>Object.values(g.castle.garrison).reduce((x,y)=>x+y,0)+g.armies.filter(a=>a.side==="P").reduce((x,a)=>x+troops(a),0);
   const foodUpkeep=g=>{const rate=Math.max(0,UPKEEP_RATE*(1-councilSum(g,"upkeepReduce")-lordTalentSum(g,"upkeepReduce")-lordEquipSum(g,"upkeepReduce")));   // 보급관 특성+군주 재능/장비: 유지비 완화(전부 합산)
@@ -674,6 +741,9 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     for(const a of g.armies){const gt=gatherOf(g,a);if(gt)inc[gt.res]+=gt.amt;}
     inc.식량-=foodUpkeep(g);   // 유지비 차감(순수입, 음수 가능)
     return inc;}
+  // income()은 UI 자원바 미리보기(렌더마다 호출)에도 쓰이는 순수 계산 함수라 여기서 고갈시키면 안 됨 —
+  // 실제 턴 처리(endTurn/offlineStep)에서만 별도로 호출해 채집한 만큼 정확히 1턴에 1번 차감.
+  function applyGatherDepletion(g){ for(const a of g.armies){ const gt=gatherOf(g,a); if(gt) depleteTile(g,a.node,gt.amt); } }
 
   // ---- 국력(Might) 점수(A1): 왕국의 성장을 단일 수치로 요약 → 상단 상시 표시. 성장 요소 증가 시에만 단조 증가. ----
   const MIGHT_TIER_W={1:1,2:1.6,3:2.4};   // costOf 티어 배율과 동일선상 가중
@@ -875,7 +945,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
         const occ=armiesAt(g,"ANCIENT"); if(occ.some(a=>a.side==="M"))continue;     // 이미 있음 → 취소
         if(occ.length){keep.push({ancient:true,at:g.turn+2});continue;}            // 점거 중 → 지연
         g.armies.push(mkMonster(tmpl, g, 1+0.2*(g.raidBossGen||0))); continue; }
-      if(r.random){ if(MSPAWN)spawnRoamer(g, MSPAWN.pool[Math.floor(Math.random()*MSPAWN.pool.length)]); continue; }  // 랜덤 타일 재등장
+      if(r.resTile){ respawnResourceTile(g); continue; }                             // 야생 자원 타일 재등장(King of Avalon 참조)
+      if(r.random){ if(MSPAWN)spawnRoamer(g); continue; }  // 랜덤 타일 재등장(시그니처 변경 — pool 인자 제거, 내부에서 중심편향 티어 자체 결정)
       const occ=armiesAt(g,r.node); if(occ.some(a=>a.side==="M"))continue;          // 이미 있음 → 취소
       if(occ.some(a=>a.side!=="M")){keep.push({node:r.node,at:g.turn+2});continue;} // 점거 중 → 지연
       const t=MONSTERS.find(m=>m.node===r.node); if(t)g.armies.push(mkMonster(t,g)); }
@@ -1014,7 +1085,13 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // ---- 시간 소요 건설(건설잡 1개 동시). 완료 시 효과 적용. 저장 호환(순수 데이터) ----
   const ECON_MAX=6;
   const econCost=(k,lv)=>{const b=ECON_BUILDINGS[k].cost,c={};for(const r in b)c[r]=Math.round(b[r]*(1+lv*0.6));return c;};
-  const buildDur=(kind,lv)=>kind==="castle"?4:kind==="wall"?3:kind==="bld"?3:kind==="construct"?3:kind==="univ"?3:kind==="tavern"?2:2+Math.floor((lv||0)/2);
+  // 아발론 참조: 기존엔 castle/bld/wall도 레벨 무관 고정 소요턴이었음 → 레벨이 오를수록 건설도 오래 걸리게(레벨1은 구값과 동일).
+  const buildDur=(kind,lv)=>{ lv=lv||0;
+    if(kind==="castle")return 4+Math.floor(lv/3);
+    if(kind==="bld")return 3+Math.floor(lv/2);
+    if(kind==="wall")return 3+Math.floor(lv/3);
+    if(kind==="construct")return 3; if(kind==="univ")return 3; if(kind==="tavern")return 2;
+    return 2+Math.floor(lv/2); };
   function startBuild(g,kind,key,cost,dur,label){ if(g.castle.build)return"건설 중 — 한 번에 하나만"; if(!canAfford(g,cost))return"자원 부족"; pay(g,cost); g.castle.build={kind,key:key||null,left:dur,total:dur,label}; return null; }
   function completeBuild(g,j){
     if(j.kind==="castle")g.castle.level++;
@@ -1027,8 +1104,8 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   }
   function construct(g,key){if(g.castle.buildings.includes(key))return null; return startBuild(g,"construct",key,BUILDINGS[key].cost,buildDur("construct"),`${key} 건설`);}
   function upgradeBuilding(g,key){if(!g.castle.buildings.includes(key))return"미건설";
-    const lv=g.castle.blevel[key]||1; if(lv>=tierCap(g))return"최대 레벨(마일스톤 해금 필요)"; return startBuild(g,"bld",key,bUpCost(key,lv),buildDur("bld"),`${key} → T${lv+1}`);}
-  function fortifyWall(g){return startBuild(g,"wall",null,wallCost(g.castle.wall||0),buildDur("wall"),"성벽 보강");}
+    const lv=g.castle.blevel[key]||1; if(lv>=tierCap(g))return"최대 레벨(마일스톤 해금 필요)"; return startBuild(g,"bld",key,bUpCost(key,lv),buildDur("bld",lv),`${key} → T${lv+1}`);}
+  function fortifyWall(g){return startBuild(g,"wall",null,wallCost(g.castle.wall||0),buildDur("wall",g.castle.wall||0),"성벽 보강");}
   // 파성추(C3): 건설 큐를 안 쓰는 즉시 제작 소모품 — 성/경제 업그레이드와 슬롯을 다투지 않음.
   function craftSiege(g){ if(!canAfford(g,SIEGE_COST))return"자원 부족"; pay(g,SIEGE_COST); g.castle.siegeItems=(g.castle.siegeItems||0)+1; return null; }
   // 승급(C2): 즉시 등급만 올리던 무결정을 "특성 2択" 결정으로 바꿈. promoteHero는 자원 확인 후 후보만 뽑고,
@@ -1049,7 +1126,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     g.xpItems-=c; h.grade++; h.traits=h.traits||(h.trait?[h.trait]:[]); delete h.trait; h.traits.push(traitId);
     g.pendingPromote=null; return null;}
   function cancelPromote(g){g.pendingPromote=null; return null;}
-  function levelUp(g){return startBuild(g,"castle",null,CASTLE_UP_COST,buildDur("castle"),"성 레벨업");}
+  function levelUp(g){return startBuild(g,"castle",null,castleUpCost(g.castle.level),buildDur("castle",g.castle.level),"성 레벨업");}
   function buildEcon(g,k){const lv=g.castle.econ[k]||0; if(lv>=ECON_MAX)return"최대 레벨"; return startBuild(g,"econ",k,econCost(k,lv),buildDur("econ",lv),`${k} Lv${lv+1}`);}
   function buildUniversity(g){if(g.castle.buildings.includes("대학"))return null; return startBuild(g,"univ",null,UNIV_COST,buildDur("univ"),"대학 건설");}
   function startResearch(g,k){if(g.research.active)return"이미 연구 중"; const r=RESEARCH[k]; if(g.research.done[k])return null;
@@ -1323,7 +1400,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // ---- 턴 종료 (income → 생산 → 연구 → 병원 → AI → mp회복 → turn++ → 승패 → 퀘스트) ----
   function endTurn(g){
     if(g.over)return{enemyBattle:null};
-    const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
+    const inc=income(g); for(const r of RES)g.res[r]+=inc[r]; applyGatherDepletion(g);
     g.starving = g.res.식량<0; if(g.starving) g.res.식량=0;   // 식량 고갈 → 이번 턴 생산 중단
     autoProduceTick(g); tickProduction(g);
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});}}
@@ -1362,7 +1439,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     while(budget>0&&guard++<300){ const u=pickAIUnit(null), key=uk(u,t); comp[key]=(comp[key]||0)+1; budget-=unitScore(u,t)||30; }
     return {id:newId(g,"EH"),side:"E",node:target.node,name:"견제 습격대",comp,hero:null,role:"attack",target:target.node}; }
   function offlineStep(g,rep){
-    const inc=income(g); for(const r of RES)g.res[r]+=inc[r];
+    const inc=income(g); for(const r of RES)g.res[r]+=inc[r]; applyGatherDepletion(g);
     g.starving=g.res.식량<0; if(g.starving)g.res.식량=0;
     autoProduceTick(g); tickProduction(g); rivalTick(g);   // I1: 방치 중에도 라이벌 국력 성장(추월 긴장감)
     if(g.research.active){g.research.active.left--;if(g.research.active.left<=0){const k=g.research.active.key;g.research.done[k]=true;g.research.active=null;if(k==="행군술")g.armies.forEach(a=>{if(a.side==="P")a.maxMp=pBaseMp(g);});if(rep)rep.research.push(k);}}
@@ -1399,7 +1476,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     rep.resGain={}; for(const r of RES){ const d=Math.round(g.res[r]-res0[r]); if(d)rep.resGain[r]=d; }
     return rep; }
 
-  API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,CASTLE_UP_COST,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
+  API={ RES,GATHER_BASE,GATHER_HERO,ARMY_CAP,ECON_CAP,WOUND_RATE,HP_SCALE,UNIT_COST,castleUpCost,BUILDINGS,ECON_BUILDINGS,UNIV_COST,GROUPS,STATNAME,AI,AI_UNIT_COST,RESEARCH,NODES,EDGES,ADJ,
     TIER_MAX,TIER_NAME,tierCap,uk,baseOf,tierOf,unitLabel,costOf,UNIT_BLD,bUpCost,maxTierFor,heroEffect,
     GRADE_BUFF,GRADE_GATHER,HERO_NAMES,HERO_TRAITS,heroTraits,TAVERN_COST,TAVERN_GAP,POOL_CAP,RECRUIT_COST,SPECIAL_COST,SUBDUE_REWARD,cityHero,cityHeroes,councilSlots,councilSum,
     ARMY_SLOTS_BASE,pArmyCount,armySlots,armySlotsMax,wallMaxLv,canAddArmy,UPKEEP_RATE,totalTroops,foodUpkeep,XP_REWARD,PROMOTE_COST,wallCost,fortifyWall,promoteHero,choosePromoteTrait,cancelPromote,armyCapFor,
@@ -1424,7 +1501,7 @@ const COORDS={P:[70,320],FOOD:[190,170],WOOD:[190,470],DEN3:[150,320],DEN1:[320,
 NORTH:[460,110],CROSS:[470,300],SOUTH:[460,510],ANCIENT:[560,420],DEN2:[620,180],DEN4:[660,500],
 STONE:[740,220],IRON:[740,440],FOOD2:[860,150],RUIN:[850,340],E:[930,320]};
 /* ===== game.js 바인딩 (단일 소스) ===== */
-const {NODES,EDGES,ADJ,RES,UNIT_COST,ECON_BUILDINGS,ECON_CAP,BUILDINGS,RESEARCH,GROUPS,STATNAME,ARMY_CAP,CASTLE_UP_COST,UNIV_COST,dijkstra,pathTo,troops,
+const {NODES,EDGES,ADJ,RES,UNIT_COST,ECON_BUILDINGS,ECON_CAP,BUILDINGS,RESEARCH,GROUPS,STATNAME,ARMY_CAP,UNIV_COST,dijkstra,pathTo,troops,
   TIER_MAX,TIER_NAME,unitLabel,baseOf,tierOf,costOf,maxTierFor,heroEffect,UNIT_BLD}=Game;
 const state=Game.newGame();
 state.selected=null; state.pendingMove=null; state.mode="normal"; state.castleTab="건물"; state.prodTier={}; // UI 전용 필드
@@ -1712,12 +1789,13 @@ function renderPanel(){
       h+=`<div style="background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:6px 8px;margin-bottom:8px;font-size:12px">
         🏗 건설 중: <b style="color:var(--gold)">${c.build.label}</b> — ${c.build.left}턴 남음
         <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div></div>`;}
-    h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur("castle")}턴</span></span>
-      <span class="cost">목${CASTLE_UP_COST.목재} 석${CASTLE_UP_COST.석재} 철${CASTLE_UP_COST.철}</span>
-      <button class="minibtn" id="levelup" ${canAfford(CASTLE_UP_COST)&&!busy?"":"disabled"}>▲</button></div>
-      <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`;
+    { const cuc=Game.castleUpCost(c.level);
+      h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur("castle",c.level)}턴</span></span>
+      <span class="cost">목${cuc.목재} 석${cuc.석재} 철${cuc.철}</span>
+      <button class="minibtn" id="levelup" ${canAfford(cuc)&&!busy?"":"disabled"}>▲</button></div>
+      <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`; }
     { const wl=c.wall||0, wc=Game.wallCost(wl), wMax=Game.wallMaxLv(state);
-      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall")}턴</span></span>
+      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall",wl)}턴</span></span>
         <span class="cost">${Object.entries(wc).map(([r,v])=>r[0]+v).join(" ")}</span>
         <button class="minibtn" data-wall="1" ${wl<wMax&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
     h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(탭해 열기 · 레벨 = 최대 티어)</span></div>`;
@@ -1730,7 +1808,7 @@ function renderPanel(){
         h+=`<div class="bldcard${open?' open':''}">
           <button class="bldcard-head" data-bld="${key}"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">Lv.${lv} · T${lv}</span></button>`;
         if(lv<cap){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
-          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("bld")}T</div>
+          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("bld",lv)}T</div>
             <button class="minibtn bldcard-btn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
         } else h+=`<div class="k" style="font-size:10px;margin:3px 0">최대 T${cap}${cap<TIER_MAX?" (마일스톤 필요)":""}</div>`;
         // F1: 병영마다 독립 큐 — 이 건물 대기열만 따로 표시(동시 훈련 체감)
@@ -1961,7 +2039,7 @@ function renderPanel(){
       if(R.cleared) h+=`<div style="margin-top:4px;font-size:12px">현황: ${ownTxt} · 수성 ${R.holder?R.holdTurns:0}/${R.need}턴</div>`;
     }
     if(mon){ const sc=Game.monsterScale(state), genTag=(s.id==="ANCIENT"&&state.raidBossGen)?` <span class="k">· ${state.raidBossGen+1}세대</span>`:"";
-      h+=`<div style="color:#c4b5fd;margin-top:5px">☠ ${mon.name} <b>[${mon.mtier}]</b>${sc>1.05?` <span class="k">(강화 ×${sc.toFixed(1)})</span>`:""}${genTag}</div>
+      h+=`<div style="color:#c4b5fd;margin-top:5px">☠ ${mon.name} <b>[${mon.mtier}${mon.tier?" T"+mon.tier:""}]</b>${sc>1.05?` <span class="k">(강화 ×${sc.toFixed(1)})</span>`:""}${genTag}</div>
       <div class="k" style="font-size:12px">구성: ${Object.entries(mon.comp).map(([k,v])=>`${unitLabel(k)} ${v}${MONSTER_ROLE[baseOf(k)]?`(${MONSTER_ROLE[baseOf(k)]})`:""}`).join(", ")}</div>
       <div class="k" style="font-size:12px">처치 보상: ${Object.entries(mon.reward).map(([k,v])=>k+" "+v).join(", ")}</div>
       <div style="font-size:12px;margin-top:4px;color:var(--gold)">▶ ${mon.mtier==="레이드"?"대군+영웅을 갖춰 도전하세요":"부대로 공격해 소탕하세요"}</div>`;

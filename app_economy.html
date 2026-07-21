@@ -165,7 +165,7 @@ const COORDS={P:[70,320],FOOD:[190,170],WOOD:[190,470],DEN3:[150,320],DEN1:[320,
 NORTH:[460,110],CROSS:[470,300],SOUTH:[460,510],ANCIENT:[560,420],DEN2:[620,180],DEN4:[660,500],
 STONE:[740,220],IRON:[740,440],FOOD2:[860,150],RUIN:[850,340],E:[930,320]};
 /* ===== game.js 바인딩 (단일 소스) ===== */
-const {NODES,EDGES,ADJ,RES,UNIT_COST,ECON_BUILDINGS,ECON_CAP,BUILDINGS,RESEARCH,GROUPS,STATNAME,ARMY_CAP,CASTLE_UP_COST,UNIV_COST,dijkstra,pathTo,troops,
+const {NODES,EDGES,ADJ,RES,UNIT_COST,ECON_BUILDINGS,ECON_CAP,BUILDINGS,RESEARCH,GROUPS,STATNAME,ARMY_CAP,UNIV_COST,dijkstra,pathTo,troops,
   TIER_MAX,TIER_NAME,unitLabel,baseOf,tierOf,costOf,maxTierFor,heroEffect,UNIT_BLD}=Game;
 const state=Game.newGame();
 state.selected=null; state.pendingMove=null; state.mode="normal"; state.castleTab="건물"; state.prodTier={}; // UI 전용 필드

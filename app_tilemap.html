@@ -32,7 +32,7 @@
   @media(max-width:820px){          /* 모바일: 지도는 드래그 팬 + 고정 높이, 패널은 바텀시트 */
     .wrap{grid-template-columns:1fr;}
     .mapbox{height:52vh;overflow:hidden;touch-action:none;}   /* 네이티브 스크롤 대신 JS 드래그 팬 */
-    svg{width:672px;max-width:none;transform-origin:0 0;}     /* 타일 ~47px, 팬으로 좌우 이동 */
+    svg{width:1008px;max-width:none;transform-origin:0 0;}    /* 타일 24*42=1008px, 팬으로 좌우 이동(맵 확장 24×16) */
     .minibtn{font-size:13px;padding:8px 11px;}
     button{min-height:42px;}
     .prodrow{padding:7px 0;}
@@ -135,7 +135,7 @@
   <button id="endturn">⏭ 턴 종료</button>
 </div>
 <div class="wrap">
-  <div class="mapbox"><svg id="map" viewBox="0 0 776 506" preserveAspectRatio="xMidYMid meet"></svg></div>
+  <div class="mapbox"><svg id="map" viewBox="0 0 1316 884" preserveAspectRatio="xMidYMid meet"></svg></div>
   <div id="panel" class="panel">
     <div class="sheet-handle" id="sheetHandle">
       <div class="qc" id="qcQuest"></div>
@@ -161,45 +161,42 @@
 //__ENGINE__
 //__GAME__
 /* ===== 타일 그리드 맵 생성 → game.js 에 주입 (로직 재사용) ===== */
-const GW=14, GH=9, TS=54, PAD=10;
+// King of Avalon 참조: 지도 확장(14×9→24×16, 약 3배) + 중심 편향 자원/몬스터 티어 시스템의 좌표 기준.
+const GW=24, GH=16, TS=54, PAD=10;
 function buildTileMap(){
   const NODES={}, EDGES=[], COORD={}, grid=[];
-  // 성(P/E)·고대성 + 양 진영 대칭 자원 클러스터(성 근처 4자원씩). 몬스터는 랜덤 스폰(고정 둥지 없음).
+  // 성(P/E) + 양 진영 대칭 자원 클러스터(성 근처 4자원씩, 무한 고정 산출). 고대성은 지도 정중앙(중심 편향 컨셉과 일치).
+  // 몬스터·야생 자원 타일은 랜덤 스폰 + 중심 편향 티어(game.js pickTierByDistance) — 고정 둥지 없음.
   const specials=[
-    {x:1,y:4,id:"P",def:{name:"아군 성",type:"castle",owner:"P"}},
-    {x:GW-2,y:4,id:"E",def:{name:"적 성",type:"castle",owner:"E"}},
-    {x:Math.floor(GW/2),y:7,id:"ANCIENT",def:{name:"고대성",type:"ancient",owner:null}},
+    {x:1,y:7,id:"P",def:{name:"아군 성",type:"castle",owner:"P"}},
+    {x:GW-2,y:7,id:"E",def:{name:"적 성",type:"castle",owner:"E"}},
+    {x:Math.floor(GW/2),y:Math.floor(GH/2),id:"ANCIENT",def:{name:"고대성",type:"ancient",owner:null}},
   ];
-  // 성 기준 자원 오프셋(거울 대칭). E는 x를 반전.
-  const resOff=[{dx:2,dy:-2,res:"식량",nm:"곡창"},{dx:2,dy:2,res:"목재",nm:"삼림"},{dx:3,dy:-1,res:"석재",nm:"채석장"},{dx:3,dy:1,res:"철",nm:"철광"}];
+  // 성 기준 자원 오프셋(거울 대칭). E는 x를 반전. 24×16 지도에 맞게 확장(구 14×9의 {2,-2}/{2,2}/{3,-1}/{3,1} 비례 확대).
+  const resOff=[{dx:3,dy:-4,res:"식량",nm:"곡창"},{dx:3,dy:4,res:"목재",nm:"삼림"},{dx:6,dy:-2,res:"석재",nm:"채석장"},{dx:6,dy:2,res:"철",nm:"철광"}];
   resOff.forEach((o,i)=>{
-    specials.push({x:1+o.dx,y:4+o.dy,id:"PR"+i,def:{name:o.nm,type:"resource",res:o.res}});
-    specials.push({x:(GW-2)-o.dx,y:4+o.dy,id:"ER"+i,def:{name:"동부 "+o.nm,type:"resource",res:o.res}});
+    specials.push({x:1+o.dx,y:7+o.dy,id:"PR"+i,def:{name:o.nm,type:"resource",res:o.res}});
+    specials.push({x:(GW-2)-o.dx,y:7+o.dy,id:"ER"+i,def:{name:"동부 "+o.nm,type:"resource",res:o.res}});
   });
   const at={}; for(const s of specials) at[s.x+","+s.y]=s;
   for(let y=0;y<GH;y++){grid[y]=[];for(let x=0;x<GW;x++){
     const s=at[x+","+y]; const id=s?s.id:("t"+x+"_"+y);
-    NODES[id]=s?{...s.def}:{name:"",type:"plain"}; COORD[id]=[x,y]; grid[y][x]=id;
+    NODES[id]=s?{...s.def,gx:x,gy:y}:{name:"",type:"plain",gx:x,gy:y}; COORD[id]=[x,y]; grid[y][x]=id;   // gx/gy: 중심 편향 거리 계산용(모든 타일에 부여)
   }}
   for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){
     if(x<GW-1)EDGES.push([grid[y][x],grid[y][x+1],1]);
     if(y<GH-1)EDGES.push([grid[y][x],grid[y+1][x],1]);
   }
-  const spawn={ count:5,
-    raid:{name:"고대 생물",mtier:"레이드",comp:{오우거:6,오크:12,하피:8},reward:{철:70,석재:50,식량:50}},
-    pool:[
-      {name:"늑대 무리",mtier:"사냥",comp:{늑대:12},reward:{식량:25,목재:20}},
-      {name:"도적 무리",mtier:"사냥",comp:{고블린:8,늑대:4},reward:{식량:20,철:12}},
-      {name:"고블린 무리",mtier:"토벌",comp:{오크:6,하피:6,오우거:2},reward:{철:40,석재:30,식량:30}},
-      {name:"오크 무리",mtier:"토벌",comp:{오크:10,오우거:3,하피:5},reward:{철:35,목재:30,석재:25}},
-    ] };
+  const spawn={ count:10, wildResCount:18,   // 지도 3배 확장에 맞춰 밀도 조정(과거 페이싱 교훈 — 초반 과부하 방지 위해 3배보다 낮게)
+    raid:{name:"고대 생물",mtier:"레이드",comp:{오우거:6,오크:12,하피:8},reward:{철:70,석재:50,식량:50}} };
+    // pool(고정 몬스터 템플릿)은 game.js의 MONSTER_TIERS(중심편향 5티어)로 대체됨 — raid(ANCIENT 고정 보스)만 유지.
   return {map:{NODES,EDGES,spawn}, COORD};
 }
 const TILE=buildTileMap();
 Game.setMap(TILE.map);
 const COORDS={}; for(const id in TILE.COORD){const[gx,gy]=TILE.COORD[id];COORDS[id]=[PAD+gx*TS+TS/2, PAD+gy*TS+TS/2];}
 /* ===== game.js 바인딩 (단일 소스, 타일맵 주입 후) ===== */
-const {NODES,EDGES,ADJ,RES,UNIT_COST,ECON_BUILDINGS,ECON_CAP,BUILDINGS,RESEARCH,GROUPS,STATNAME,ARMY_CAP,CASTLE_UP_COST,UNIV_COST,dijkstra,pathTo,troops,
+const {NODES,EDGES,ADJ,RES,UNIT_COST,ECON_BUILDINGS,ECON_CAP,BUILDINGS,RESEARCH,GROUPS,STATNAME,ARMY_CAP,UNIV_COST,dijkstra,pathTo,troops,
   TIER_MAX,TIER_NAME,unitLabel,baseOf,tierOf,costOf,maxTierFor,heroEffect,UNIT_BLD}=Game;
 const state=Game.newGame();
 state.selected=null; state.pendingMove=null; state.mode="normal"; state.castleTab="건물"; state.prodTier={}; // UI 전용 필드
@@ -239,6 +236,11 @@ function renderMap(){
       ic.textContent=n.type==="castle"?"🏰":n.type==="ancient"?"🏛":n.type==="resource"?"◆":"☠"; svg.appendChild(ic);
       const lb=el("text",{x,y:y+16,"text-anchor":"middle","font-size":8.5,fill:"#94a3b8","pointer-events":"none"});
       lb.textContent=n.res?n.res:(n.name.length>5?n.name.slice(0,4):n.name); svg.appendChild(lb);
+    }
+    // King of Avalon 참조: 야생 자원 타일 티어·잔량 표시(중심 편향으로 고티어일수록 진한 금색)
+    if(n.type==="resource" && n.tier){
+      const tt=el("text",{x,y:py-2,"text-anchor":"middle","font-size":9,"font-weight":"800","pointer-events":"none",fill:n.tier>=4?"#f59e0b":n.tier>=2?"#fbbf24":"#94a3b8"});
+      tt.textContent=`T${n.tier} ${n.remaining}/${n.cap}`; svg.appendChild(tt);
     }
     // 레이드 수성 진행
     if(n.type==="ancient" && state.raid.holder && state.raid.holdTurns>0){

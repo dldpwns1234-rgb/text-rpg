@@ -183,12 +183,13 @@ function renderPanel(){
       h+=`<div style="background:var(--bg);border:1px solid var(--gold);border-radius:8px;padding:6px 8px;margin-bottom:8px;font-size:12px">
         🏗 건설 중: <b style="color:var(--gold)">${c.build.label}</b> — ${c.build.left}턴 남음
         <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div></div>`;}
-    h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur("castle")}턴</span></span>
-      <span class="cost">목${CASTLE_UP_COST.목재} 석${CASTLE_UP_COST.석재} 철${CASTLE_UP_COST.철}</span>
-      <button class="minibtn" id="levelup" ${canAfford(CASTLE_UP_COST)&&!busy?"":"disabled"}>▲</button></div>
-      <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`;
+    { const cuc=Game.castleUpCost(c.level);
+      h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur("castle",c.level)}턴</span></span>
+      <span class="cost">목${cuc.목재} 석${cuc.석재} 철${cuc.철}</span>
+      <button class="minibtn" id="levelup" ${canAfford(cuc)&&!busy?"":"disabled"}>▲</button></div>
+      <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`; }
     { const wl=c.wall||0, wc=Game.wallCost(wl), wMax=Game.wallMaxLv(state);
-      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall")}턴</span></span>
+      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall",wl)}턴</span></span>
         <span class="cost">${Object.entries(wc).map(([r,v])=>r[0]+v).join(" ")}</span>
         <button class="minibtn" data-wall="1" ${wl<wMax&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
     h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(탭해 열기 · 레벨 = 최대 티어)</span></div>`;
@@ -201,7 +202,7 @@ function renderPanel(){
         h+=`<div class="bldcard${open?' open':''}">
           <button class="bldcard-head" data-bld="${key}"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">Lv.${lv} · T${lv}</span></button>`;
         if(lv<cap){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
-          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("bld")}T</div>
+          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("bld",lv)}T</div>
             <button class="minibtn bldcard-btn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
         } else h+=`<div class="k" style="font-size:10px;margin:3px 0">최대 T${cap}${cap<TIER_MAX?" (마일스톤 필요)":""}</div>`;
         // F1: 병영마다 독립 큐 — 이 건물 대기열만 따로 표시(동시 훈련 체감)
@@ -432,7 +433,7 @@ function renderPanel(){
       if(R.cleared) h+=`<div style="margin-top:4px;font-size:12px">현황: ${ownTxt} · 수성 ${R.holder?R.holdTurns:0}/${R.need}턴</div>`;
     }
     if(mon){ const sc=Game.monsterScale(state), genTag=(s.id==="ANCIENT"&&state.raidBossGen)?` <span class="k">· ${state.raidBossGen+1}세대</span>`:"";
-      h+=`<div style="color:#c4b5fd;margin-top:5px">☠ ${mon.name} <b>[${mon.mtier}]</b>${sc>1.05?` <span class="k">(강화 ×${sc.toFixed(1)})</span>`:""}${genTag}</div>
+      h+=`<div style="color:#c4b5fd;margin-top:5px">☠ ${mon.name} <b>[${mon.mtier}${mon.tier?" T"+mon.tier:""}]</b>${sc>1.05?` <span class="k">(강화 ×${sc.toFixed(1)})</span>`:""}${genTag}</div>
       <div class="k" style="font-size:12px">구성: ${Object.entries(mon.comp).map(([k,v])=>`${unitLabel(k)} ${v}${MONSTER_ROLE[baseOf(k)]?`(${MONSTER_ROLE[baseOf(k)]})`:""}`).join(", ")}</div>
       <div class="k" style="font-size:12px">처치 보상: ${Object.entries(mon.reward).map(([k,v])=>k+" "+v).join(", ")}</div>
       <div style="font-size:12px;margin-top:4px;color:var(--gold)">▶ ${mon.mtier==="레이드"?"대군+영웅을 갖춰 도전하세요":"부대로 공격해 소탕하세요"}</div>`;
