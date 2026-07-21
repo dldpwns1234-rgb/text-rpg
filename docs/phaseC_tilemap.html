@@ -322,9 +322,13 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
 
   // ---- 상수 ----
   const RES=["식량","목재","석재","철"];
+  // 아발론 참조: 병력생산/건설/연구 소요시간 + 위협 시계(AI 웨이브/시즌/유예/재등장 주기)를 묵직하게(사용자 확정 2026-07-21, ~×30).
+  // 채집/수입은 실측 결과 그대로 둔다(§ 아래) — 건설·훈련이 항상 슬롯 1개 직렬 처리라 자원은 애초에 병목이 아니었고,
+  // 수입까지 ×30 하면 소비가 못 따라가 잉여가 턴 12000 기준 수십만 단위로 폭주(실제 sim.js 장기 실행으로 확인) → 비용처럼 그대로 유지.
+  const TIME_SCALE=30;
   const GATHER_BASE=6, GATHER_HERO=1.5, ARMY_CAP=30, ECON_CAP=20, WOUND_RATE=0.35;   // ARMY_CAP: 부대당 최대 병력 기본값(성레벨·연구로 확장 — armyCapFor)
   const ARMY_SLOTS_BASE=3;  // 운용 부대 수 상한(§9): 기본 + 성 레벨 + 연구. 총군사력 = 부대수 × ARMY_CAP
-  const UPKEEP_RATE=0.2, UPKEEP_FREE=20;  // 식량 유지비: FREE 초과 병력 1당 매턴 소모(대군 소프트 상한). 고갈 시 생산 중단
+  const UPKEEP_RATE=0.2, UPKEEP_FREE=20;  // 식량 유지비: FREE 초과 병력 1당 매턴 소모(대군 소프트 상한). 고갈 시 생산 중단.
   const XP_REWARD={사냥:2,토벌:4,레이드:8};      // 몬스터 처치 → 경험치 아이템 (G-D: 승급이 느려 정체 → 상향)
   const PROMOTE_COST={1:2,2:4};                  // ★1→2 : 2, ★2→3 : 4 (경험치 아이템)
   const DRAGON_SCALE_REWARD={사냥:1,토벌:4,레이드:16};   // 몬스터 처치 → 용린(드래곤 전용 육성 자원, C1). G-D: 사냥이 0을 줘 초반 드래곤 정체 → 1+로. 레이드가 크게 줘 고대성 도전과 엮임.
@@ -444,7 +448,9 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // AI는 별도 AI_TIER_MAX=3으로 고정 — 마일스톤 해금과 무관하게 턴 기반 성장만 함(플레이어 해금 전에 AI가 T5를 먼저 찍는 불균형 방지).
   const TIER_MAX=5, AI_TIER_MAX=3, TIER_NAME={1:"기본",2:"정예",3:"상급",4:"전설",5:"신화"};
   // 유닛 훈련 소요(buildRate 1 기준 틱). 고티어일수록 오래 걸림 → 병력 폭증·식량 급감 완화, 고티어가 진짜 투자가 됨.
-  const TRAIN_TICKS={1:2,2:4,3:7,4:11,5:16};
+  // TIME_SCALE(아발론 참조 ×30) 적용 — 베이스 테이블은 그대로 두고 노출값만 스케일(드리프트 방지).
+  const TRAIN_TICKS_BASE={1:2,2:4,3:7,4:11,5:16};
+  const TRAIN_TICKS=Object.fromEntries(Object.entries(TRAIN_TICKS_BASE).map(([t,v])=>[t,v*TIME_SCALE]));
   // 복합 키: T1은 순수 이름, T2+는 "이름@T2" (기존 저장구조 하위호환)
   const uk=(name,tier)=>(tier&&tier>1)?name+"@T"+tier:name;
   const baseOf=k=>{const i=k.indexOf("@T");return i<0?k:k.slice(0,i);};
@@ -481,18 +487,21 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // ws40이면 AI 100%(과함), ws38이면 ~40%(명확한 위협+능동 방어로 극복 가능). §10 밸런스 참조.
   // 유저 피드백: "적이 초반부터 너무 많이 쳐들어온다"(실시간 2x/4x면 30턴이 순식간). 초반 유예(graceTurns) 동안은
   // 예산을 낮추고(graceBudget) 본대 비축을 waveSize로 제한해 첫 웨이브가 늦게·과대화 없이 오게 하고, waveGap으로 웨이브 간 최소 간격을 둠.
-  const AI={budgetPerTurn:5,waveSize:38,homeCap:70,tierEvery:16,waveCap:2,waveFrac:0.85,graceTurns:30,graceBudget:2,waveGap:16}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
+  // TIME_SCALE(×30, 위협 시계 동반 스케일 — 생산이 30배 느려진 만큼 웨이브 간격/유예/AI 티어 성장도 같이 늘려야
+  // 부대를 미처 못 만든 채 계속 털리는 회귀를 피함, 2026-07-21 확인). budgetPerTurn/graceBudget(턴당 본대 회복 예산)은
+  // 반대로 ÷TIME_SCALE — 그대로 두면 공격 간격이 30배 벌어진 사이 본대가 매번 완전 재생해 정복이 원천봉쇄됨(실측으로 확인).
+  const AI={budgetPerTurn:5/TIME_SCALE,waveSize:38,homeCap:70,tierEvery:16*TIME_SCALE,waveCap:2,waveFrac:0.85,graceTurns:30*TIME_SCALE,graceBudget:2/TIME_SCALE,waveGap:16*TIME_SCALE}, AI_UNIT_COST={중갑보병:3,창병:3,장궁병:2,석궁병:3,경기병:4,중기병:5};
   // 시즌형 침공(B2): N턴마다 예고→도래하는 대규모 원정대. 도래마다 간격이 줄고(escalating) 규모가 커짐(횟수·국력 둘 다 반영).
-  const SEASON_INTERVAL=60, SEASON_MIN_INTERVAL=30, SEASON_WARN_LEAD=12, SEASON_BASE=30, SEASON_GROWTH=0.35;
+  const SEASON_INTERVAL=60*TIME_SCALE, SEASON_MIN_INTERVAL=30*TIME_SCALE, SEASON_WARN_LEAD=12*TIME_SCALE, SEASON_BASE=30, SEASON_GROWTH=0.35;
   // 다수 세력(B1, 성 없는 방식): 자기 성·영토 없이 야생 타일에서 등장해 독자적 주기로 습격하는 독립 세력들.
   // side는 여전히 "E"(정복/함락 판정을 그대로 재사용) — 이름·병종 편향·주기로만 서로 다른 위협처럼 느껴지게 함.
   // 주기(interval): 유저 피드백 "적 공격이 정신없이 계속 들어온다" → 3세력+시즌+AI원정대가 겹쳐 쏟아지던 걸 완화하려 주기를 크게 늘림(45/65/50 → 72/96/80).
   const FACTIONS=[
-    {id:"raider",   name:"도적단",   units:["경기병","중기병"],interval:72,base:12,growth:0.22},
-    {id:"horde",    name:"오크 군세", units:["중갑보병","창병"],interval:96,base:15,growth:0.25},
+    {id:"raider",   name:"도적단",   units:["경기병","중기병"],interval:72*TIME_SCALE,base:12,growth:0.22},
+    {id:"horde",    name:"오크 군세", units:["중갑보병","창병"],interval:96*TIME_SCALE,base:15,growth:0.25},
     // prey형: 성이 아니라 야외에 나가있는 아군 부대(채집대 등)를 노림 — "그냥 다 성으로 몰려온다"는 반복감을 깨고,
     // 채집·원정 나간 부대를 방치하면 위험하다는 새로운 판단(호위/철수)을 만듦.
-    {id:"nightraid",name:"야습대",   units:["장궁병","석궁병"],interval:80,base:10,growth:0.2,prey:true},
+    {id:"nightraid",name:"야습대",   units:["장궁병","석궁병"],interval:80*TIME_SCALE,base:10,growth:0.2,prey:true},
   ];
   // 라이벌 왕국(I1, 끝없는 경쟁): 풀 맵 도시 없이 "국력이 자라는 추상 세력". side는 여전히 "E"(웨이브에 정체성 라벨만 얹음).
   // 각 라이벌은 플레이어 국력의 배수(factor)를 목표로 서서히 수렴 → 항상 경쟁권 유지(오프라인 폭주 없음). factor>1은 방치 시 추월.
@@ -505,7 +514,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   ];
   let threatMul=g=>1;   // 위협 등반 계수(I4에서 시즌 회차·랭크 기반으로 확장). I1~I3에선 1(무영향).
   // 경쟁 시즌(I3): 대침공 스케줄러 g.season과 별개. 성과 점수→티어→보상, 소프트리셋 후 새 시즌(비종결).
-  const RANK_SEASON_LEN=180, RANK_SOFTRESET=0.35, THREAT_CAP=1.5;
+  const RANK_SEASON_LEN=180*TIME_SCALE, RANK_SOFTRESET=0.35, THREAT_CAP=1.5;
   const RANK_TIERS=[
     {id:"bronze", name:"브론즈",   min:0},   {id:"silver", name:"실버",     min:120},
     {id:"gold",   name:"골드",     min:280}, {id:"plat",   name:"플래티넘", min:480},
@@ -555,6 +564,17 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   RESEARCH["용의 힘 II"]={cat:"전투",sub:"드래곤",req:["용의 힘 I"],cost:{철:45,석재:30},turns:4,desc:"드래곤 공격 +10%p (누적)",dragonMod:{stat:"atk",amount:0.10}};
   RESEARCH["용의 비늘 I"]={cat:"전투",sub:"드래곤",req:[],cost:{철:20,석재:30},turns:3,desc:"드래곤 전투 참여 시 방어 +10%p",dragonMod:{stat:"def",amount:0.10}};
   RESEARCH["용의 비늘 II"]={cat:"전투",sub:"드래곤",req:["용의 비늘 I"],cost:{철:30,석재:45},turns:4,desc:"드래곤 방어 +10%p (누적)",dragonMod:{stat:"def",amount:0.10}};
+  // 연구 트리 보강(2026-07-21): 건설(buildDur)엔 훈련(buildRate)과 달리 가속 수단이 없었음 — 신규 2단으로 메움(buildDur에서 hasR로 직접 소비).
+  RESEARCH["건축 공법 I"]={cat:"내정",sub:"경제",req:[],cost:{목재:30,석재:20},turns:3,desc:"건설 소요시간 -10%"};
+  RESEARCH["건축 공법 II"]={cat:"내정",sub:"경제",req:["건축 공법 I"],cost:{목재:40,석재:30},turns:4,desc:"건설 소요시간 -10%p (누적)"};
+  // 결전/철벽(위 E4)에서 끝나던 트리를 한 단계 더 — 이미 배타적으로 갈렸으므로 excludes 불필요(결전을 골랐으면 결전 II만 해금).
+  (function(){ for(const g in GROUPS){
+    const kAtk=`${g} 특화: 결전`, kDef=`${g} 특화: 철벽`;
+    RESEARCH[`${g} 특화: 결전 II`]={cat:"전투",sub:g,req:[kAtk],cost:{목재:55,철:70},turns:6,desc:`${g} 공격 +15%p (결전 심화, 누적)`,mod:{group:g,stat:"atk",mul:1.15}};
+    RESEARCH[`${g} 특화: 철벽 II`]={cat:"전투",sub:g,req:[kDef],cost:{목재:55,철:70},turns:6,desc:`${g} 방어 +15%p (철벽 심화, 누적)`,mod:{group:g,stat:"df",mul:1.15}};
+  } })();
+  // 아발론 참조 시간배율(TIME_SCALE): 개별 turns 리터럴을 일일이 바꾸지 않고 여기서 일괄 적용(드리프트 방지).
+  for(const k in RESEARCH) RESEARCH[k].turns=(RESEARCH[k].turns||1)*TIME_SCALE;
   // dragonMod 항목 전용 합산 헬퍼 — researchMods(group 기반)와 별개 소형 함수로 격리해 기존 로직을 안 건드림.
   function dragonResearchSum(g,field){ let s=0;
     for(const k in RESEARCH){ const r=RESEARCH[k]; if(r.dragonMod && r.dragonMod.stat===field && g.research.done[k]) s+=r.dragonMod.amount; }
@@ -563,7 +583,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const armyCapFor=g=>ARMY_CAP+((g.castle.level||1)-1)*5+(hasR(g,"행군 편제 I")?10:0)+(hasR(g,"행군 편제 II")?10:0);
 
   // ---- 맵 (로직: 위상만. 좌표는 렌더러 담당) — setMap 으로 교체 가능(노드↔타일) ----
-  const RESPAWN_DELAY=8;
+  const RESPAWN_DELAY=8*TIME_SCALE;
   // 기본 맵: 17노드 (침공 회랑 P-FOOD-NORTH-CROSS-STONE-RUIN-E, 둥지는 가지)
   const DEFAULT_MAP={
     NODES:{ P:{name:"아군 성",type:"castle",owner:"P"}, FOOD:{name:"곡창",type:"resource",res:"식량"},
@@ -663,7 +683,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   // ---- King of Avalon 참조: 자원 타일 티어(1~5) + 고갈 + 재등장 — "야생" 타일 전용(집 근처 고정 8타일은 무한 산출 그대로) ----
   const RES_TIER_YIELD=[6,10,16,26,42];             // T1=기존 GATHER_BASE와 연속성. 이후 ~1.6배/단계(아발론 Gather 표 §8-1 참조)
   const RES_TIER_CAP=RES_TIER_YIELD.map(y=>y*12);   // 완전 소진까지 상주 채집 기준 약 12턴
-  const RESPAWN_DELAY_RES=10;                       // 몬스터 둥지(8턴)보다 살짝 느긋한 경제형 재생성
+  const RESPAWN_DELAY_RES=10*TIME_SCALE;             // 몬스터 둥지(8턴)보다 살짝 느긋한 경제형 재생성
   function plantResourceTile(id){ const tier=pickTierByDistance(tileDistNorm(id));
     const res=RES[Math.floor(Math.random()*RES.length)], cap=RES_TIER_CAP[tier-1], g0=NODES[id];
     NODES[id]={name:{식량:"야생 곡창",목재:"야생 삼림",석재:"야생 채석장",철:"야생 철광"}[res],
@@ -1103,12 +1123,15 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   const ECON_MAX=6;
   const econCost=(k,lv)=>{const b=ECON_BUILDINGS[k].cost,c={};for(const r in b)c[r]=Math.round(b[r]*(1+lv*0.6));return c;};
   // 아발론 참조: 기존엔 castle/bld/wall도 레벨 무관 고정 소요턴이었음 → 레벨이 오를수록 건설도 오래 걸리게(레벨1은 구값과 동일).
-  const buildDur=(kind,lv)=>{ lv=lv||0;
-    if(kind==="castle")return 4+Math.floor(lv/3);
-    if(kind==="bld")return 3+Math.floor(lv/2);
-    if(kind==="wall")return 3+Math.floor(lv/3);
-    if(kind==="construct")return 3; if(kind==="univ")return 3; if(kind==="tavern")return 2;
-    return 2+Math.floor(lv/2); };
+  // TIME_SCALE(×30) 적용 + "건축 공법 I/II" 연구로 -10%p씩 단축(훈련엔 buildRate 가속이 있었지만 건설엔 없던 공백을 메움).
+  const buildDur=(g,kind,lv)=>{ lv=lv||0; let t;
+    if(kind==="castle")t=4+Math.floor(lv/3);
+    else if(kind==="bld")t=3+Math.floor(lv/2);
+    else if(kind==="wall")t=3+Math.floor(lv/3);
+    else if(kind==="construct")t=3; else if(kind==="univ")t=3; else if(kind==="tavern")t=2;
+    else t=2+Math.floor(lv/2);
+    const cut=(hasR(g,"건축 공법 I")?0.1:0)+(hasR(g,"건축 공법 II")?0.1:0);
+    return Math.max(1, Math.round(t*TIME_SCALE*(1-cut))); };
   function startBuild(g,kind,key,cost,dur,label){ if(g.castle.build)return"건설 중 — 한 번에 하나만"; if(!canAfford(g,cost))return"자원 부족"; pay(g,cost); g.castle.build={kind,key:key||null,left:dur,total:dur,label}; return null; }
   function completeBuild(g,j){
     if(j.kind==="castle")g.castle.level++;
@@ -1119,10 +1142,10 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     else if(j.kind==="univ")g.castle.buildings.push("대학");
     else if(j.kind==="tavern"){g.tavern.built=true;rollCandidate(g);}
   }
-  function construct(g,key){if(g.castle.buildings.includes(key))return null; return startBuild(g,"construct",key,BUILDINGS[key].cost,buildDur("construct"),`${key} 건설`);}
+  function construct(g,key){if(g.castle.buildings.includes(key))return null; return startBuild(g,"construct",key,BUILDINGS[key].cost,buildDur(g,"construct"),`${key} 건설`);}
   function upgradeBuilding(g,key){if(!g.castle.buildings.includes(key))return"미건설";
-    const lv=g.castle.blevel[key]||1; if(lv>=tierCap(g))return"최대 레벨(마일스톤 해금 필요)"; return startBuild(g,"bld",key,bUpCost(key,lv),buildDur("bld",lv),`${key} → T${lv+1}`);}
-  function fortifyWall(g){return startBuild(g,"wall",null,wallCost(g.castle.wall||0),buildDur("wall",g.castle.wall||0),"성벽 보강");}
+    const lv=g.castle.blevel[key]||1; if(lv>=tierCap(g))return"최대 레벨(마일스톤 해금 필요)"; return startBuild(g,"bld",key,bUpCost(key,lv),buildDur(g,"bld",lv),`${key} → T${lv+1}`);}
+  function fortifyWall(g){return startBuild(g,"wall",null,wallCost(g.castle.wall||0),buildDur(g,"wall",g.castle.wall||0),"성벽 보강");}
   // 파성추(C3): 건설 큐를 안 쓰는 즉시 제작 소모품 — 성/경제 업그레이드와 슬롯을 다투지 않음.
   function craftSiege(g){ if(!canAfford(g,SIEGE_COST))return"자원 부족"; pay(g,SIEGE_COST); g.castle.siegeItems=(g.castle.siegeItems||0)+1; return null; }
   // 승급(C2): 즉시 등급만 올리던 무결정을 "특성 2択" 결정으로 바꿈. promoteHero는 자원 확인 후 후보만 뽑고,
@@ -1143,14 +1166,17 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     g.xpItems-=c; h.grade++; h.traits=h.traits||(h.trait?[h.trait]:[]); delete h.trait; h.traits.push(traitId);
     g.pendingPromote=null; return null;}
   function cancelPromote(g){g.pendingPromote=null; return null;}
-  function levelUp(g){return startBuild(g,"castle",null,castleUpCost(g.castle.level),buildDur("castle",g.castle.level),"성 레벨업");}
-  function buildEcon(g,k){const lv=g.castle.econ[k]||0; if(lv>=ECON_MAX)return"최대 레벨"; return startBuild(g,"econ",k,econCost(k,lv),buildDur("econ",lv),`${k} Lv${lv+1}`);}
-  function buildUniversity(g){if(g.castle.buildings.includes("대학"))return null; return startBuild(g,"univ",null,UNIV_COST,buildDur("univ"),"대학 건설");}
+  function levelUp(g){return startBuild(g,"castle",null,castleUpCost(g.castle.level),buildDur(g,"castle",g.castle.level),"성 레벨업");}
+  function buildEcon(g,k){const lv=g.castle.econ[k]||0; if(lv>=ECON_MAX)return"최대 레벨"; return startBuild(g,"econ",k,econCost(k,lv),buildDur(g,"econ",lv),`${k} Lv${lv+1}`);}
+  function buildUniversity(g){if(g.castle.buildings.includes("대학"))return null; return startBuild(g,"univ",null,UNIV_COST,buildDur(g,"univ"),"대학 건설");}
   function startResearch(g,k){if(g.research.active)return"이미 연구 중"; const r=RESEARCH[k]; if(g.research.done[k])return null;
     if(!(r.req||[]).every(q=>g.research.done[q]))return"선행 연구 필요";
     if((r.excludes||[]).some(ex=>g.research.done[ex]))return"상호 배타 연구 — 이미 다른 노선을 선택함";
     if(!canAfford(g,r.cost))return"자원 부족";
-    pay(g,r.cost); const turns=Math.max(1,r.turns-councilSum(g,"researchBonus")-lordTalentSum(g,"researchBonus")-lordEquipSum(g,"researchBonus"));
+    pay(g,r.cost);
+    // TIME_SCALE로 turns가 30배 커진 만큼, 턴 감소 보너스(영웅특성/재능/장비의 flat -1~-6)도 같이 스케일해야 비율이 보존됨.
+    const rBonus=(councilSum(g,"researchBonus")+lordTalentSum(g,"researchBonus")+lordEquipSum(g,"researchBonus"))*TIME_SCALE;
+    const turns=Math.max(1,r.turns-rBonus);
     g.research.active={key:k,left:turns}; return null;}
   function assignHero(g,hid,loc){const h=heroById(g,hid); if(!h)return"영웅 없음";
     // F2: 위원회(성 배치)는 내정형 전용 + 슬롯 상한 — 이미 자리를 잡은 영웅의 재배치(같은 자리)는 허용.
@@ -1164,7 +1190,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     :`성 배치: 생산 +${h.grade>=3?2:1} · 자원지 배치: 채집 ×${GRADE_GATHER[h.grade]}`;
     const trs=heroTraits(h); return trs.length?`${base} · ${trs.map(t=>`✦${t.name}: ${t.desc}`).join(" · ")}`:base;};
   // ---- 선술집: 랜덤 후보 등장 → 재화 영입 · ★3은 토벌 점수 특별 영입 ----
-  function buildTavern(g){if(g.tavern.built)return null; return startBuild(g,"tavern",null,TAVERN_COST,buildDur("tavern"),"선술집 건설");}
+  function buildTavern(g){if(g.tavern.built)return null; return startBuild(g,"tavern",null,TAVERN_COST,buildDur(g,"tavern"),"선술집 건설");}
   function rollCandidate(g){if(!g.tavern.built||g.tavern.pool.length>=POOL_CAP)return;
     const type=Math.random()<0.5?"내정":"전투", grade=Math.random()<0.6?1:2;
     const name=HERO_NAMES[Math.floor(Math.random()*HERO_NAMES.length)];
@@ -1235,7 +1261,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
     g.armies.push(e); return e;}
   function aiTurn(g){
     const grace=g.turn<(AI.graceTurns||0);   // 초반 유예: 예산 낮추고 비축 제한(첫 웨이브 지연·과대화 방지)
-    g.ai.budget+=(grace?AI.graceBudget:AI.budgetPerTurn)+Math.min(3,Math.floor(g.turn/14));   // 후반 눈덩이 완화(긴 판 대응)
+    g.ai.budget+=(grace?AI.graceBudget:AI.budgetPerTurn)+Math.min(3,Math.floor(g.turn/(14*TIME_SCALE)))/TIME_SCALE;   // 후반 눈덩이 완화(긴 판 대응) — 이것도 턴당 flat rate라 ÷TIME_SCALE
     let home=g.armies.find(a=>a.side==="E"&&a.node==="E"&&a.role!=="attack");
     if(!home){home={id:newId(g,"EH"),side:"E",node:"E",mp:0,maxMp:0,name:"적 본대",comp:{},hero:null,role:"home"};g.armies.push(home);}
     const cu=playerCounterUnit(g), t=aiTierOf(g); let guard=0;
@@ -1269,7 +1295,7 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
       const e={id:newId(g,"ES"),side:"E",node:"E",mp:0,maxMp:0,name:`${nm?nm+"의 ":""}시즌 대침공 ${s.count}차`,comp,hero:null,role:"attack",target,rival:rid};
       g.armies.push(e); orderMove(g,e.id,target);
       const done=s.count; s.count++;
-      const interval=Math.max(SEASON_MIN_INTERVAL, SEASON_INTERVAL-3*(s.count-1));
+      const interval=Math.max(SEASON_MIN_INTERVAL, SEASON_INTERVAL-3*TIME_SCALE*(s.count-1));
       s.next=g.turn+interval; s.warnAt=s.next-SEASON_WARN_LEAD; s.warned=false; delete s.previewUnit;
       return {type:"arrived",count:done,troops:need};
     }
@@ -1844,12 +1870,12 @@ function renderPanel(){
         🏗 건설 중: <b style="color:var(--gold)">${c.build.label}</b> — ${c.build.left}턴 남음
         <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div></div>`;}
     { const cuc=Game.castleUpCost(c.level);
-      h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur("castle",c.level)}턴</span></span>
+      h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur(state,"castle",c.level)}턴</span></span>
       <span class="cost">목${cuc.목재} 석${cuc.석재} 철${cuc.철}</span>
       <button class="minibtn" id="levelup" ${canAfford(cuc)&&!busy?"":"disabled"}>▲</button></div>
       <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`; }
     { const wl=c.wall||0, wc=Game.wallCost(wl), wMax=Game.wallMaxLv(state);
-      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall",wl)}턴</span></span>
+      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur(state,"wall",wl)}턴</span></span>
         <span class="cost">${Object.entries(wc).map(([r,v])=>r[0]+v).join(" ")}</span>
         <button class="minibtn" data-wall="1" ${wl<wMax&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
     h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(탭해 열기 · 레벨 = 최대 티어)</span></div>`;
@@ -1862,7 +1888,7 @@ function renderPanel(){
         h+=`<div class="bldcard${open?' open':''}">
           <button class="bldcard-head" data-bld="${key}"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">Lv.${lv} · T${lv}</span></button>`;
         if(lv<cap){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
-          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("bld",lv)}T</div>
+          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur(state,"bld",lv)}T</div>
             <button class="minibtn bldcard-btn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
         } else h+=`<div class="k" style="font-size:10px;margin:3px 0">최대 T${cap}${cap<TIER_MAX?" (마일스톤 필요)":""}</div>`;
         // F1: 병영마다 독립 큐 — 이 건물 대기열만 따로 표시(동시 훈련 체감)
@@ -1873,7 +1899,7 @@ function renderPanel(){
         const cs=Object.entries(b.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
         h+=`<div class="bldcard">
           <div class="bldcard-head" style="opacity:.7"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">미건설</span></div>
-          <div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("construct")}T</div>
+          <div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur(state,"construct")}T</div>
           <button class="minibtn bldcard-btn" data-construct="${key}" ${canAfford(b.cost)&&!busy?"":"disabled"}>건설</button>
         </div>`;
       }
@@ -1909,7 +1935,7 @@ function renderPanel(){
       const cur = lv>0 ? (b.res?`+${Math.round(b.amt*lv*mult)} ${b.res}/턴`:`치료 +${lv*3}/턴`) : "미건설";
       if(lv>=Game.ECON_MAX){ h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} 최대 · ${cur}</span></span></div>`; continue; }
       const cost=Game.econCost(k,lv); const cs=Object.entries(cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
-      h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} · ${cur} · ${Game.buildDur("econ",lv)}T</span></span>
+      h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} · ${cur} · ${Game.buildDur(state,"econ",lv)}T</span></span>
         <span class="cost">${cs}</span>
         <button class="minibtn" data-econ="${k}" ${canAfford(cost)&&!busy?"":"disabled"}>${lv?"▲":"건설"}</button></div>`;
     }
@@ -1919,7 +1945,7 @@ function renderPanel(){
     if(!state.castle.buildings.includes("대학")){
       const cs=Object.entries(UNIV_COST).map(([r,v])=>`${r[0]}${v}`).join(" ");
       h+=`<hr><div class="prodrow"><span class="nm">🎓 대학 <span class="k">연구 해금</span></span>
-        <span class="cost">${cs}</span><button class="minibtn" data-univ="1" ${canAfford(UNIV_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur("univ")}T</button></div>`;
+        <span class="cost">${cs}</span><button class="minibtn" data-univ="1" ${canAfford(UNIV_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur(state,"univ")}T</button></div>`;
     } else {
       h+=`<hr><div class="k" style="margin-bottom:4px">🎓 대학 — 연구 <span class="k">(전투와 병행)</span></div>`;
       h+=`<div style="display:flex;gap:5px;margin-bottom:6px">`;
@@ -1951,7 +1977,7 @@ function renderPanel(){
     if(!state.tavern.built){
       const cs=Object.entries(Game.TAVERN_COST).map(([r,v])=>`${r[0]}${v}`).join(" ");
       h+=`<hr><div class="prodrow"><span class="nm">🍺 선술집 <span class="k">영웅 영입 해금</span></span>
-        <span class="cost">${cs}</span><button class="minibtn" data-tavern="1" ${canAfford(Game.TAVERN_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur("tavern")}T</button></div>`;
+        <span class="cost">${cs}</span><button class="minibtn" data-tavern="1" ${canAfford(Game.TAVERN_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur(state,"tavern")}T</button></div>`;
     } else {
       const star=g=>"★".repeat(g);
       h+=`<hr><div class="k" style="margin-bottom:4px">🍺 선술집 — 영입 후보 <span class="k">(${state.tavern.pool.length}명 · ${Game.TAVERN_GAP||3}턴마다 등장)</span></div>`;

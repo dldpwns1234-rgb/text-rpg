@@ -184,12 +184,12 @@ function renderPanel(){
         🏗 건설 중: <b style="color:var(--gold)">${c.build.label}</b> — ${c.build.left}턴 남음
         <div style="height:5px;background:var(--line);border-radius:3px;margin-top:4px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:3px"></div></div></div>`;}
     { const cuc=Game.castleUpCost(c.level);
-      h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur("castle",c.level)}턴</span></span>
+      h+=`<div class="prodrow"><span class="nm">성 레벨업 <span class="k">Lv.${c.level} · ${Game.buildDur(state,"castle",c.level)}턴</span></span>
       <span class="cost">목${cuc.목재} 석${cuc.석재} 철${cuc.철}</span>
       <button class="minibtn" id="levelup" ${canAfford(cuc)&&!busy?"":"disabled"}>▲</button></div>
       <div class="k" style="font-size:11px">→ 기본 수입 +1씩, 생산 속도 +1 · 부대 상한: Lv3→4, Lv5→5 (최대 5)</div><hr>`; }
     { const wl=c.wall||0, wc=Game.wallCost(wl), wMax=Game.wallMaxLv(state);
-      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur("wall",wl)}턴</span></span>
+      h+=`<div class="prodrow"><span class="nm">🧱 성벽 보강 <span class="k">Lv.${wl}/${wMax} · 수성 +${Math.min(wMax*5,wl*5)}% · ${Game.buildDur(state,"wall",wl)}턴</span></span>
         <span class="cost">${Object.entries(wc).map(([r,v])=>r[0]+v).join(" ")}</span>
         <button class="minibtn" data-wall="1" ${wl<wMax&&canAfford(wc)&&!busy?"":"disabled"}>▲</button></div><hr>`; }
     h+=`<div class="k" style="margin-bottom:4px">생산 건물 <span class="k">(탭해 열기 · 레벨 = 최대 티어)</span></div>`;
@@ -202,7 +202,7 @@ function renderPanel(){
         h+=`<div class="bldcard${open?' open':''}">
           <button class="bldcard-head" data-bld="${key}"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">Lv.${lv} · T${lv}</span></button>`;
         if(lv<cap){const uc=Game.bUpCost(key,lv);const cs=Object.entries(uc).map(([r,v])=>`${r[0]}${v}`).join(" ");
-          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("bld",lv)}T</div>
+          h+=`<div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur(state,"bld",lv)}T</div>
             <button class="minibtn bldcard-btn" data-bup="${key}" ${canAfford(uc)&&!busy?"":"disabled"}>▲T${lv+1}</button>`;
         } else h+=`<div class="k" style="font-size:10px;margin:3px 0">최대 T${cap}${cap<TIER_MAX?" (마일스톤 필요)":""}</div>`;
         // F1: 병영마다 독립 큐 — 이 건물 대기열만 따로 표시(동시 훈련 체감)
@@ -213,7 +213,7 @@ function renderPanel(){
         const cs=Object.entries(b.cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
         h+=`<div class="bldcard">
           <div class="bldcard-head" style="opacity:.7"><span class="bi">${b.icon}</span><span class="bn">${key}</span><span class="k" style="font-size:10px">미건설</span></div>
-          <div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur("construct")}T</div>
+          <div class="k" style="font-size:10px;margin:3px 0">${cs}·${Game.buildDur(state,"construct")}T</div>
           <button class="minibtn bldcard-btn" data-construct="${key}" ${canAfford(b.cost)&&!busy?"":"disabled"}>건설</button>
         </div>`;
       }
@@ -249,7 +249,7 @@ function renderPanel(){
       const cur = lv>0 ? (b.res?`+${Math.round(b.amt*lv*mult)} ${b.res}/턴`:`치료 +${lv*3}/턴`) : "미건설";
       if(lv>=Game.ECON_MAX){ h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} 최대 · ${cur}</span></span></div>`; continue; }
       const cost=Game.econCost(k,lv); const cs=Object.entries(cost).map(([r,v])=>`${r[0]}${v}`).join(" ");
-      h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} · ${cur} · ${Game.buildDur("econ",lv)}T</span></span>
+      h+=`<div class="prodrow"><span class="nm">${b.icon} ${k} <span class="k">Lv.${lv} · ${cur} · ${Game.buildDur(state,"econ",lv)}T</span></span>
         <span class="cost">${cs}</span>
         <button class="minibtn" data-econ="${k}" ${canAfford(cost)&&!busy?"":"disabled"}>${lv?"▲":"건설"}</button></div>`;
     }
@@ -259,7 +259,7 @@ function renderPanel(){
     if(!state.castle.buildings.includes("대학")){
       const cs=Object.entries(UNIV_COST).map(([r,v])=>`${r[0]}${v}`).join(" ");
       h+=`<hr><div class="prodrow"><span class="nm">🎓 대학 <span class="k">연구 해금</span></span>
-        <span class="cost">${cs}</span><button class="minibtn" data-univ="1" ${canAfford(UNIV_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur("univ")}T</button></div>`;
+        <span class="cost">${cs}</span><button class="minibtn" data-univ="1" ${canAfford(UNIV_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur(state,"univ")}T</button></div>`;
     } else {
       h+=`<hr><div class="k" style="margin-bottom:4px">🎓 대학 — 연구 <span class="k">(전투와 병행)</span></div>`;
       h+=`<div style="display:flex;gap:5px;margin-bottom:6px">`;
@@ -291,7 +291,7 @@ function renderPanel(){
     if(!state.tavern.built){
       const cs=Object.entries(Game.TAVERN_COST).map(([r,v])=>`${r[0]}${v}`).join(" ");
       h+=`<hr><div class="prodrow"><span class="nm">🍺 선술집 <span class="k">영웅 영입 해금</span></span>
-        <span class="cost">${cs}</span><button class="minibtn" data-tavern="1" ${canAfford(Game.TAVERN_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur("tavern")}T</button></div>`;
+        <span class="cost">${cs}</span><button class="minibtn" data-tavern="1" ${canAfford(Game.TAVERN_COST)&&!busy?"":"disabled"}>건설 ${Game.buildDur(state,"tavern")}T</button></div>`;
     } else {
       const star=g=>"★".repeat(g);
       h+=`<hr><div class="k" style="margin-bottom:4px">🍺 선술집 — 영입 후보 <span class="k">(${state.tavern.pool.length}명 · ${Game.TAVERN_GAP||3}턴마다 등장)</span></div>`;
