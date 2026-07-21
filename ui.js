@@ -372,6 +372,8 @@ function renderPanel(){
     if(ltab==="장비"){
     h+=`<div class="k" style="margin-bottom:4px">⚔ 장비</div>`;
     const inv=state.lordInventory||[];
+    const eqCount=Game.EQUIP_SLOTS.filter(s=>lord.equipment&&lord.equipment[s]).length;
+    h+=`<div class="k" style="font-size:11px;margin-bottom:6px${eqCount>=Game.EQUIP_SLOTS.length?';color:var(--gold)':''}">✦ 세트 효과(4슬롯 전부 착용 시, 등급 무관): 공격/방어/자원산출 각 +5%p · 건설속도 +1 ${eqCount>=Game.EQUIP_SLOTS.length?"— 발동 중":`(${eqCount}/${Game.EQUIP_SLOTS.length})`}</div>`;
     for(const slot of Game.EQUIP_SLOTS){
       const itemId=lord.equipment&&lord.equipment[slot], item=itemId?inv.find(x=>x.id===itemId):null;
       if(item){ const cat=Game.EQUIPMENT[item.key];

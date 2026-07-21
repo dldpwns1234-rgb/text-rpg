@@ -375,23 +375,40 @@ if (typeof self !== "undefined") { self.UNITS = UNITS; self.simulate = simulate;
   ];
   const lordTalentSum=(g,field)=>Object.keys((g.lord&&g.lord.talents)||{}).reduce((s,id)=>{const t=LORD_TALENTS.find(x=>x.id===id);return s+((t&&t.field===field)?t.amount:0);},0);
   // 군주 장비 — 슬롯 4개, 몬스터 처치로 얻은 재료·설계도로 제작 후 강화(1~5강, 아발론 방식: 1-2강 +5%p씩·3-4강 +10%p씩·5강 +20%p, 누적 +50%).
+  // King of Avalon 참조(§21): 슬롯당 등급 곡선을 병종 티어 캡(T1~T5)과 통일 — 슬롯당 5개, 전부 성능이 다른 유일 아이템(재스킨 중복 없음).
+  // 기존 T1/T2 아이템 이름·수치는 세이브 하위호환을 위해 그대로 유지, T3~T5만 신규 추가.
   const EQUIP_SLOTS=["무기","방어구","투구","장신구"];
   const ENHANCE_MULT=[0,0.05,0.10,0.20,0.30,0.50];
   const EQUIPMENT={
-    "낡은 검":     {slot:"무기",  tier:1,need:{blueprint:1,material:4},cost:{철:20},         field:"atkBonus",amount:0.08,desc:"공격 +8%p"},
-    "용살자의 검":  {slot:"무기",  tier:2,need:{blueprint:2,material:8},cost:{철:45,석재:20},  field:"atkBonus",amount:0.15,desc:"공격 +15%p"},
-    "가죽 갑주":   {slot:"방어구", tier:1,need:{blueprint:1,material:4},cost:{목재:20},        field:"defBonus",amount:0.08,desc:"방어 +8%p"},
-    "판금 갑주":   {slot:"방어구", tier:2,need:{blueprint:2,material:8},cost:{목재:45,철:20},   field:"defBonus",amount:0.15,desc:"방어 +15%p"},
-    "감독관의 투구":{slot:"투구",  tier:1,need:{blueprint:1,material:4},cost:{목재:15,철:10},   field:"buildBonus",amount:1,  desc:"건설 속도 +1"},
-    "총사의 투구": {slot:"투구",  tier:2,need:{blueprint:2,material:8},cost:{목재:30,철:25},   field:"buildBonus",amount:2,  desc:"건설 속도 +2"},
-    "번영의 인장": {slot:"장신구", tier:1,need:{blueprint:1,material:4},cost:{식량:20,철:10},   field:"econBonus",amount:0.10,desc:"자원 건물 산출 +10%"},
-    "왕관의 인장": {slot:"장신구", tier:2,need:{blueprint:2,material:8},cost:{식량:40,철:25},   field:"econBonus",amount:0.20,desc:"자원 건물 산출 +20%"},
+    "낡은 검":      {slot:"무기",  tier:1,need:{blueprint:1, material:4}, cost:{철:20},              field:"atkBonus",amount:0.08,desc:"공격 +8%p"},
+    "용살자의 검":  {slot:"무기",  tier:2,need:{blueprint:2, material:8}, cost:{철:45,석재:20},       field:"atkBonus",amount:0.15,desc:"공격 +15%p"},
+    "룬 대검":      {slot:"무기",  tier:3,need:{blueprint:4, material:16},cost:{철:80,석재:40,목재:20},field:"atkBonus",amount:0.24,desc:"공격 +24%p"},
+    "왕의 검":      {slot:"무기",  tier:4,need:{blueprint:7, material:28},cost:{철:140,석재:70,목재:40},field:"atkBonus",amount:0.35,desc:"공격 +35%p"},
+    "용왕의 검":    {slot:"무기",  tier:5,need:{blueprint:12,material:48},cost:{철:240,석재:120,목재:70},field:"atkBonus",amount:0.50,desc:"공격 +50%p"},
+    "가죽 갑주":    {slot:"방어구",tier:1,need:{blueprint:1, material:4}, cost:{목재:20},              field:"defBonus",amount:0.08,desc:"방어 +8%p"},
+    "판금 갑주":    {slot:"방어구",tier:2,need:{blueprint:2, material:8}, cost:{목재:45,철:20},        field:"defBonus",amount:0.15,desc:"방어 +15%p"},
+    "용린 갑주":    {slot:"방어구",tier:3,need:{blueprint:4, material:16},cost:{목재:80,철:40,석재:20},field:"defBonus",amount:0.24,desc:"방어 +24%p"},
+    "왕실 갑주":    {slot:"방어구",tier:4,need:{blueprint:7, material:28},cost:{목재:140,철:70,석재:40},field:"defBonus",amount:0.35,desc:"방어 +35%p"},
+    "용왕의 비늘":  {slot:"방어구",tier:5,need:{blueprint:12,material:48},cost:{목재:240,철:120,석재:70},field:"defBonus",amount:0.50,desc:"방어 +50%p"},
+    "감독관의 투구":{slot:"투구",  tier:1,need:{blueprint:1, material:4}, cost:{목재:15,철:10},        field:"buildBonus",amount:1,desc:"건설 속도 +1"},
+    "총사의 투구":  {slot:"투구",  tier:2,need:{blueprint:2, material:8}, cost:{목재:30,철:25},        field:"buildBonus",amount:2,desc:"건설 속도 +2"},
+    "건축가의 투구":{slot:"투구",  tier:3,need:{blueprint:4, material:16},cost:{목재:55,철:45},        field:"buildBonus",amount:3,desc:"건설 속도 +3"},
+    "군주의 투구":  {slot:"투구",  tier:4,need:{blueprint:7, material:28},cost:{목재:95,철:80},        field:"buildBonus",amount:4,desc:"건설 속도 +4"},
+    "천공의 투구":  {slot:"투구",  tier:5,need:{blueprint:12,material:48},cost:{목재:160,철:135},      field:"buildBonus",amount:6,desc:"건설 속도 +6"},
+    "번영의 인장":  {slot:"장신구",tier:1,need:{blueprint:1, material:4}, cost:{식량:20,철:10},        field:"econBonus",amount:0.10,desc:"자원 건물 산출 +10%"},
+    "왕관의 인장":  {slot:"장신구",tier:2,need:{blueprint:2, material:8}, cost:{식량:40,철:25},        field:"econBonus",amount:0.20,desc:"자원 건물 산출 +20%"},
+    "황금 인장":    {slot:"장신구",tier:3,need:{blueprint:4, material:16},cost:{식량:70,철:45},        field:"econBonus",amount:0.32,desc:"자원 건물 산출 +32%"},
+    "왕조의 인장":  {slot:"장신구",tier:4,need:{blueprint:7, material:28},cost:{식량:120,철:80},       field:"econBonus",amount:0.46,desc:"자원 건물 산출 +46%"},
+    "영겁의 인장":  {slot:"장신구",tier:5,need:{blueprint:12,material:48},cost:{식량:200,철:135},      field:"econBonus",amount:0.65,desc:"자원 건물 산출 +65%"},
   };
-  const lordEquipSum=(g,field)=>{ let s=0; const eq=(g.lord&&g.lord.equipment)||{};
-    for(const slot in eq){ const itemId=eq[slot]; if(!itemId) continue;
+  // King of Avalon 참조: 영웅 "서약 특전"·장비 "스미스의 인" 세트효과와 같은 패턴 — 4슬롯 전부 착용 시(등급 무관) 소량의 전군 세트 보너스.
+  const LORD_SET_BONUS={atkBonus:0.05, defBonus:0.05, econBonus:0.05, buildBonus:1};
+  const lordEquipSum=(g,field)=>{ let s=0; const eq=(g.lord&&g.lord.equipment)||{}; let filled=0;
+    for(const slot of EQUIP_SLOTS){ const itemId=eq[slot]; if(!itemId) continue;
       const it=(g.lordInventory||[]).find(x=>x.id===itemId); if(!it) continue;
-      const cat=EQUIPMENT[it.key]; if(!cat||cat.field!==field) continue;
-      s+=cat.amount*(1+ENHANCE_MULT[it.enhance||0]); }
+      filled++;
+      const cat=EQUIPMENT[it.key]; if(cat&&cat.field===field) s+=cat.amount*(1+ENHANCE_MULT[it.enhance||0]); }
+    if(filled>=EQUIP_SLOTS.length && LORD_SET_BONUS[field]) s+=LORD_SET_BONUS[field];
     return s; };
   const wallCost=lv=>({석재:25+lv*20,철:5+lv*4}); // 성벽 보강(반복형 석재 소비처) — 수성 방어↑
   const HERO_BUFF=0.20, HP_SCALE=1.0;  // HP 전역 배율. 1.4는 티어테스트 잔재로 삼각(기병>궁병)을 깨뜨려 1.0으로 정정(§7). 1.0=항등 → 실제 전투가 verify.js 검증 조건과 일치.
@@ -2015,6 +2032,8 @@ function renderPanel(){
     if(ltab==="장비"){
     h+=`<div class="k" style="margin-bottom:4px">⚔ 장비</div>`;
     const inv=state.lordInventory||[];
+    const eqCount=Game.EQUIP_SLOTS.filter(s=>lord.equipment&&lord.equipment[s]).length;
+    h+=`<div class="k" style="font-size:11px;margin-bottom:6px${eqCount>=Game.EQUIP_SLOTS.length?';color:var(--gold)':''}">✦ 세트 효과(4슬롯 전부 착용 시, 등급 무관): 공격/방어/자원산출 각 +5%p · 건설속도 +1 ${eqCount>=Game.EQUIP_SLOTS.length?"— 발동 중":`(${eqCount}/${Game.EQUIP_SLOTS.length})`}</div>`;
     for(const slot of Game.EQUIP_SLOTS){
       const itemId=lord.equipment&&lord.equipment[slot], item=itemId?inv.find(x=>x.id===itemId):null;
       if(item){ const cat=Game.EQUIPMENT[item.key];
